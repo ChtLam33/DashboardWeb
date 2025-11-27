@@ -3,7 +3,8 @@
 $cacheFile  = __DIR__ . "/cache_dashboard.json";
 $configFile = __DIR__ . "/config_cuves.json";
 
-$cuves = [];
+$cuves  = [];
+$config = [];
 
 // Charger le cache (dernières mesures)
 if (file_exists($cacheFile)) {
@@ -24,50 +25,79 @@ function nf($v, $dec = 1) {
     return is_numeric($v) ? number_format((float)$v, $dec, ',', '') : '';
 }
 
-// --- Réordonner les cuves selon l'ordre de config_cuves.json ---
+// --- Charger la config (pour ordre + lot) ---
+$lotById = [];
+
 if (file_exists($configFile)) {
     $config = json_decode(file_get_contents($configFile), true);
-    if (is_array($config) && !empty($config)) {
-        // On récupère l'ordre des IDs depuis la config
-        $orderIds = [];
-        foreach ($config as $cfg) {
-            if (!empty($cfg['id'])) {
-                $orderIds[] = $cfg['id'];
-            }
-        }
+    if (!is_array($config)) $config = [];
+}
 
-        if (!empty($orderIds) && !empty($cuves)) {
-            // Indexer les cuves par ID
-            $byId = [];
-            $noId = [];
-            foreach ($cuves as $c) {
-                $id = isset($c['id']) ? $c['id'] : null;
-                if ($id) {
-                    $byId[$id] = $c;
-                } else {
-                    $noId[] = $c;
-                }
-            }
+// Mapping ID → lot
+foreach ($config as $cfg) {
+    if (!empty($cfg['id'])) {
+        $lotById[$cfg['id']] = isset($cfg['lot']) ? $cfg['lot'] : '';
+    }
+}
 
-            $ordered = [];
-            // Ajouter dans l'ordre de config
-            foreach ($orderIds as $id) {
-                if (isset($byId[$id])) {
-                    $ordered[] = $byId[$id];
-                    unset($byId[$id]);
-                }
-            }
-            // Ajouter les éventuels restants
-            foreach ($byId as $c) {
-                $ordered[] = $c;
-            }
-            foreach ($noId as $c) {
-                $ordered[] = $c;
-            }
-
-            $cuves = $ordered;
+// --- Réordonner les cuves selon l'ordre de config_cuves.json ---
+if (!empty($config) && !empty($cuves)) {
+    $orderIds = [];
+    foreach ($config as $cfg) {
+        if (!empty($cfg['id'])) {
+            $orderIds[] = $cfg['id'];
         }
     }
+
+    if (!empty($orderIds)) {
+        $byId = [];
+        $noId = [];
+        foreach ($cuves as $c) {
+            $id = isset($c['id']) ? $c['id'] : null;
+            if ($id) {
+                $byId[$id] = $c;
+            } else {
+                $noId[] = $c;
+            }
+        }
+
+        $ordered = [];
+        foreach ($orderIds as $id) {
+            if (isset($byId[$id])) {
+                $ordered[] = $byId[$id];
+                unset($byId[$id]);
+            }
+        }
+        foreach ($byId as $c) {
+            $ordered[] = $c;
+        }
+        foreach ($noId as $c) {
+            $ordered[] = $c;
+        }
+
+        $cuves = $ordered;
+    }
+}
+
+// --- Calcul des totaux par lot ---
+$lotsTotals  = [];
+$totalGlobal = 0.0;
+
+foreach ($cuves as $c) {
+    $id  = valf($c, 'id', '');
+    $vol = valf($c, 'volume_hl', null);
+
+    if ($id === '' || !is_numeric($vol)) continue;
+
+    $lotName = isset($lotById[$id]) && trim($lotById[$id]) !== ''
+        ? trim($lotById[$id])
+        : 'Sans lot';
+
+    if (!isset($lotsTotals[$lotName])) {
+        $lotsTotals[$lotName] = 0.0;
+    }
+    $lotsTotals[$lotName] += (float)$vol;
+    $totalGlobal          += (float)$vol;
 }
 ?>
 <!DOCTYPE html>
@@ -119,7 +149,6 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 }
 .cuve:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.45)}
 
-/* Carte en cours de drag */
 .cuve.dragging{
   opacity:.7;
   outline:1px dashed var(--gold);
@@ -239,6 +268,35 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   background:var(--gold2);color:#000;border:none;padding:8px 14px;border-radius:8px;cursor:pointer
 }
 .save-btn{margin-top:10px}
+
+/* Résumé des volumes par lot */
+.lots-summary{
+  padding:0 12px 16px 12px;
+  margin-top:-4px;
+}
+.lots-summary h2{
+  margin:6px 0;
+  font-size:.95rem;
+  color:var(--gold);
+}
+.lots-summary table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.85rem;
+}
+.lots-summary th,
+.lots-summary td{
+  padding:4px 6px;
+  border-bottom:1px solid #2a2a2a;
+}
+.lots-summary th{
+  text-align:left;
+  background:#171717;
+}
+.lots-summary tfoot td{
+  font-weight:700;
+  border-top:1px solid #444;
+}
 </style>
 </head>
 <body>
@@ -257,7 +315,6 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   <p style="grid-column:1/-1;text-align:center;">Aucune donnée affichée. Cliquez sur 🔄 pour actualiser.</p>
 <?php else: ?>
   <?php foreach ($cuves as $c):
-
     $id     = htmlspecialchars(valf($c,'id',''));
     $nom    = htmlspecialchars(valf($c,'cuve','(sans nom)'));
     $pourc  = (float)valf($c,'pourcentage',0);
@@ -270,10 +327,9 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     $rssi   = isset($c['rssi']) ? (int)$c['rssi'] : null;
     $dtStr  = valf($c,'datetime',null);
 
-    // Gestion "online / offline" via l'âge de la dernière mesure
     $ageSec     = null;
     $isOffline  = false;
-    $offlineThreshold = 25; // 25 secondes
+    $offlineThreshold = 25;
 
     if ($dtStr) {
       $ts = strtotime($dtStr);
@@ -286,14 +342,13 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
       }
     }
 
-    // Couleur du Wi-Fi
     $color = 'var(--unk)';
     if ($isOffline) {
-      $color = 'var(--bad)'; // rouge si hors ligne
+      $color = 'var(--bad)';
     } elseif ($rssi !== null) {
-      if ($rssi > -60)      $color = 'var(--ok)';   // vert
-      else if ($rssi > -75) $color = 'var(--mid)';  // jaune
-      else                  $color = 'var(--bad)';  // rouge
+      if ($rssi > -60)      $color = 'var(--ok)';
+      else if ($rssi > -75) $color = 'var(--mid)';
+      else                  $color = 'var(--bad)';
     }
   ?>
   <div class="cuve<?= $isOffline ? ' offline' : '' ?>"
@@ -302,10 +357,16 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
        draggable="true">
     <div class="head">
       <span class="wifi-icon" style="background-color:<?= $color ?>"
-        title="<?=
-          $isOffline
-            ? 'Capteur hors ligne'.($dtStr ? ' – dernière mesure : '.$dtStr : '')
-            : ($rssi !== null ? ('RSSI: '.$rssi.' dBm') : 'RSSI indisponible')
+        title="<?php
+          if ($isOffline) {
+            echo 'Capteur hors ligne'.($dtStr ? ' – dernière mesure : '.$dtStr : '');
+          } else {
+            if ($rssi !== null) {
+              echo 'RSSI: '.$rssi.' dBm';
+            } else {
+              echo 'RSSI indisponible';
+            }
+          }
         ?>"></span>
       <h2><?= $nom ?></h2>
     </div>
@@ -335,14 +396,40 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
       <?php endif; ?>
     </div>
 
-    <!-- Handle de drag en bas à droite -->
     <div class="drag-handle" title="Réorganiser cette cuve">⠿</div>
   </div>
   <?php endforeach; ?>
 <?php endif; ?>
 </main>
 
-<!-- POPUP PARAMÈTRES -->
+<?php if (!empty($lotsTotals)): ?>
+<section class="lots-summary">
+  <h2>Volumes par lot</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Lot</th>
+        <th>Volume total (HL)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($lotsTotals as $lotName => $valHL): ?>
+        <tr>
+          <td><?= htmlspecialchars($lotName) ?></td>
+          <td><?= nf($valHL,2) ?></td>
+        </tr>
+      <?php endforeach; ?>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td>Total</td>
+        <td><?= nf($totalGlobal,2) ?></td>
+      </tr>
+    </tfoot>
+  </table>
+</section>
+<?php endif; ?>
+
 <div class="param-popup" id="paramPopup">
   <div class="popup-content">
     <h3>Paramètres des cuves</h3>
@@ -377,11 +464,12 @@ async function showParamPopup(){
     configData=await res.json();
     if(!Array.isArray(configData)){c.innerHTML="Erreur.";return;}
     let html=`<table class='param-table'>
-    <tr><th>ID</th><th>Nom</th><th>Capteur→Fond</th><th>Hauteur max</th><th>Diamètre</th><th>Aj. HL</th></tr>`;
+    <tr><th>ID</th><th>Nom</th><th>Lot</th><th>Capteur→Fond</th><th>Hauteur max</th><th>Diamètre</th><th>Aj. HL</th></tr>`;
     configData.forEach((cu,i)=>{
       html+=`<tr>
       <td>${cu.id}</td>
       <td><input value="${cu.nomCuve??''}" data-i="${i}" data-k="nomCuve"></td>
+      <td><input value="${cu.lot??''}" data-i="${i}" data-k="lot"></td>
       <td><input value="${cu.hauteurCapteurFond??''}" data-i="${i}" data-k="hauteurCapteurFond" type="number" step="0.1"></td>
       <td><input value="${cu.hauteurMaxLiquide??''}" data-i="${i}" data-k="hauteurMaxLiquide" type="number" step="0.1"></td>
       <td><input value="${cu.diametreCuve??''}" data-i="${i}" data-k="diametreCuve" type="number" step="0.1"></td>
@@ -452,12 +540,11 @@ const container = document.getElementById('cuvesContainer');
 let dragSrcEl = null;
 
 function handleDragStart(e){
-  const card = this;
-  dragSrcEl = card;
-  card.classList.add('dragging');
+  dragSrcEl = this;
+  this.classList.add('dragging');
   if(e.dataTransfer){
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', card.dataset.id || '');
+    e.dataTransfer.setData('text/plain', this.dataset.id || '');
   }
 }
 
@@ -467,7 +554,8 @@ function handleDragOver(e){
   if(!target || target === dragSrcEl || target.parentNode !== container) return;
 
   const rect = target.getBoundingClientRect();
-  const offset = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
+  const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+  const offset = clientY - rect.top;
   const midpoint = rect.height / 2;
 
   if(offset > midpoint){
@@ -517,7 +605,6 @@ async function saveNewOrder(){
   }
 }
 
-// Initialisation du drag & drop
 initDragAndDrop();
 </script>
 </body>
