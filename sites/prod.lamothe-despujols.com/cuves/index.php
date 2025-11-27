@@ -1,31 +1,86 @@
 <?php
 // --- Lecture du CACHE JSON ---
-$cacheFile = __DIR__ . "/cache_dashboard.json";
+$cacheFile  = __DIR__ . "/cache_dashboard.json";
+$configFile = __DIR__ . "/config_cuves.json";
+
 $cuves = [];
 
+// Charger le cache (dernières mesures)
 if (file_exists($cacheFile)) {
     $json = file_get_contents($cacheFile);
     $cuves = json_decode($json, true) ?: [];
 }
 
-// Date/heure de dernière mise à jour
-$lastUpdate = file_exists($cacheFile) ? date("d/m/Y H:i:s", filemtime($cacheFile)) : "N/A";
+// Date/heure de dernière mise à jour du cache
+$lastUpdate = file_exists($cacheFile)
+    ? date("d/m/Y H:i:s", filemtime($cacheFile))
+    : "N/A";
 
-// Helpers
+// --- Helpers ---
 function valf($arr, $key, $default = null) {
-  return isset($arr[$key]) && $arr[$key] !== '' ? $arr[$key] : $default;
+    return isset($arr[$key]) && $arr[$key] !== '' ? $arr[$key] : $default;
 }
 function nf($v, $dec = 1) {
-  return is_numeric($v) ? number_format((float)$v, $dec) : '';
+    return is_numeric($v) ? number_format((float)$v, $dec, ',', '') : '';
+}
+
+// --- Réordonner les cuves selon l'ordre de config_cuves.json ---
+if (file_exists($configFile)) {
+    $config = json_decode(file_get_contents($configFile), true);
+    if (is_array($config) && !empty($config)) {
+        // On récupère l'ordre des IDs depuis la config
+        $orderIds = [];
+        foreach ($config as $cfg) {
+            if (!empty($cfg['id'])) {
+                $orderIds[] = $cfg['id'];
+            }
+        }
+
+        if (!empty($orderIds) && !empty($cuves)) {
+            // Indexer les cuves par ID
+            $byId = [];
+            $noId = [];
+            foreach ($cuves as $c) {
+                $id = isset($c['id']) ? $c['id'] : null;
+                if ($id) {
+                    $byId[$id] = $c;
+                } else {
+                    $noId[] = $c;
+                }
+            }
+
+            $ordered = [];
+            // Ajouter dans l'ordre de config
+            foreach ($orderIds as $id) {
+                if (isset($byId[$id])) {
+                    $ordered[] = $byId[$id];
+                    unset($byId[$id]);
+                }
+            }
+            // Ajouter les éventuels restants
+            foreach ($byId as $c) {
+                $ordered[] = $c;
+            }
+            foreach ($noId as $c) {
+                $ordered[] = $c;
+            }
+
+            $cuves = $ordered;
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23fbc02d' d='M32 4C32 4 16 24 16 36a16 16 0 0032 0C48 24 32 4 32 4z'/%3E%3C/svg%3E">
 <title>Dashboard Cuves – Château Lamothe</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- Favicon goutte jaune simple (inline SVG) -->
+<link rel="icon" type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23f3d26b' d='M32 6C26 16 18 24 18 34c0 8 6.3 14 14 14s14-6 14-14C46 24 38 16 32 6z'/%3E%3C/svg%3E">
+
 <style>
 :root{
   --bg:#111;--card:#1b1b1b;--text:#ddd;--muted:#9aa0a6;
@@ -60,9 +115,16 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   text-align:center;
   transition:.2s;
   position:relative;
-  overflow:hidden
+  overflow:hidden;
 }
 .cuve:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.45)}
+
+/* Carte en cours de drag */
+.cuve.dragging{
+  opacity:.7;
+  outline:1px dashed var(--gold);
+}
+
 .head{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px}
 .head h2{margin:0;font-size:.95rem;color:var(--gold);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -133,14 +195,49 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .muted{color:var(--muted)}
 #loading{display:none;text-align:center;padding:8px;background:#fff3be;color:#b17f00}
 
-.param-popup{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);justify-content:center;align-items:center;z-index:10}
-.popup-content{background:#101010;color:#eee;padding:16px;border-radius:12px;width:90%;max-width:780px;border:1px solid #2a2a2a}
+/* Handle de drag (4 flèches) */
+.drag-handle{
+  position:absolute;
+  right:6px;
+  bottom:6px;
+  width:20px;
+  height:20px;
+  border-radius:6px;
+  border:1px solid #444;
+  font-size:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:grab;
+  background:rgba(255,255,255,0.03);
+  color:#ccc;
+}
+.drag-handle:hover{
+  background:rgba(255,255,255,0.08);
+}
+
+/* POPUP PARAMÈTRES */
+.param-popup{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.45);justify-content:center;align-items:center;z-index:10
+}
+.popup-content{
+  background:#101010;color:#eee;padding:16px;border-radius:12px;
+  width:90%;max-width:780px;border:1px solid #2a2a2a
+}
 .popup-content h3{margin:.2rem 0 10px;color:var(--gold)}
 .param-table{width:100%;border-collapse:collapse}
-.param-table th,.param-table td{border-bottom:1px solid #2a2a2a;padding:6px 8px;text-align:left;font-size:.9rem}
+.param-table th,.param-table td{
+  border-bottom:1px solid #2a2a2a;padding:6px 8px;text-align:left;font-size:.9rem
+}
 .param-table th{background:#141414;color:#d8c07a}
-.param-table input{width:100%;border:1px solid #3a3a3a;border-radius:6px;padding:6px;background:#0e0e0e;color:#eee}
-.popup-content button{background:var(--gold2);color:#000;border:none;padding:8px 14px;border-radius:8px;cursor:pointer}
+.param-table input{
+  width:100%;border:1px solid #3a3a3a;border-radius:6px;
+  padding:6px;background:#0e0e0e;color:#eee
+}
+.popup-content button{
+  background:var(--gold2);color:#000;border:none;padding:8px 14px;border-radius:8px;cursor:pointer
+}
 .save-btn{margin-top:10px}
 </style>
 </head>
@@ -161,6 +258,7 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 <?php else: ?>
   <?php foreach ($cuves as $c):
 
+    $id     = htmlspecialchars(valf($c,'id',''));
     $nom    = htmlspecialchars(valf($c,'cuve','(sans nom)'));
     $pourc  = (float)valf($c,'pourcentage',0);
     $vol    = valf($c,'volume_hl',null);
@@ -170,12 +268,12 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     $hPlein = valf($c,'hauteurPlein',null);
     $hCuve  = valf($c,'hauteurCuve',null);
     $rssi   = isset($c['rssi']) ? (int)$c['rssi'] : null;
+    $dtStr  = valf($c,'datetime',null);
 
     // Gestion "online / offline" via l'âge de la dernière mesure
-    $dtStr      = valf($c,'datetime',null);
     $ageSec     = null;
     $isOffline  = false;
-    $offlineThreshold = 25; // Mesure luna toutes les 6 secondes, 25s sans mesure = pas de wifi
+    $offlineThreshold = 25; // 25 secondes
 
     if ($dtStr) {
       $ts = strtotime($dtStr);
@@ -198,7 +296,10 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
       else                  $color = 'var(--bad)';  // rouge
     }
   ?>
-  <div class="cuve<?= $isOffline ? ' offline' : '' ?>" data-pourc="<?= $pourc ?>">
+  <div class="cuve<?= $isOffline ? ' offline' : '' ?>"
+       data-pourc="<?= $pourc ?>"
+       data-id="<?= $id ?>"
+       draggable="true">
     <div class="head">
       <span class="wifi-icon" style="background-color:<?= $color ?>"
         title="<?=
@@ -233,6 +334,9 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         </div>
       <?php endif; ?>
     </div>
+
+    <!-- Handle de drag en bas à droite -->
+    <div class="drag-handle" title="Réorganiser cette cuve">⠿</div>
   </div>
   <?php endforeach; ?>
 <?php endif; ?>
@@ -278,9 +382,9 @@ async function showParamPopup(){
       html+=`<tr>
       <td>${cu.id}</td>
       <td><input value="${cu.nomCuve??''}" data-i="${i}" data-k="nomCuve"></td>
-      <td><input value="${cu.hauteurCapteurFond??''}" data-i="${i}" data-k="hauteurCapteurFond" type="number"></td>
-      <td><input value="${cu.hauteurMaxLiquide??''}" data-i="${i}" data-k="hauteurMaxLiquide" type="number"></td>
-      <td><input value="${cu.diametreCuve??''}" data-i="${i}" data-k="diametreCuve" type="number"></td>
+      <td><input value="${cu.hauteurCapteurFond??''}" data-i="${i}" data-k="hauteurCapteurFond" type="number" step="0.1"></td>
+      <td><input value="${cu.hauteurMaxLiquide??''}" data-i="${i}" data-k="hauteurMaxLiquide" type="number" step="0.1"></td>
+      <td><input value="${cu.diametreCuve??''}" data-i="${i}" data-k="diametreCuve" type="number" step="0.1"></td>
       <td><input value="${cu.AjustementHL??''}" data-i="${i}" data-k="AjustementHL" type="number" step="0.01"></td>
       </tr>`;
     });
@@ -342,6 +446,79 @@ document.querySelectorAll('.canvas-wave').forEach((canvas,i)=>{
   }
   draw();
 });
+
+// --- Drag & Drop des cartes de cuves + autosave ordre ---
+const container = document.getElementById('cuvesContainer');
+let dragSrcEl = null;
+
+function handleDragStart(e){
+  const card = this;
+  dragSrcEl = card;
+  card.classList.add('dragging');
+  if(e.dataTransfer){
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', card.dataset.id || '');
+  }
+}
+
+function handleDragOver(e){
+  e.preventDefault();
+  const target = e.target.closest('.cuve');
+  if(!target || target === dragSrcEl || target.parentNode !== container) return;
+
+  const rect = target.getBoundingClientRect();
+  const offset = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
+  const midpoint = rect.height / 2;
+
+  if(offset > midpoint){
+    container.insertBefore(dragSrcEl, target.nextSibling);
+  }else{
+    container.insertBefore(dragSrcEl, target);
+  }
+}
+
+function handleDrop(e){
+  e.preventDefault();
+  return false;
+}
+
+function handleDragEnd(e){
+  this.classList.remove('dragging');
+  saveNewOrder();
+}
+
+function initDragAndDrop(){
+  const cards = container.querySelectorAll('.cuve');
+  cards.forEach(card=>{
+    card.addEventListener('dragstart', handleDragStart);
+    card.addEventListener('dragover', handleDragOver);
+    card.addEventListener('drop', handleDrop);
+    card.addEventListener('dragend', handleDragEnd);
+  });
+}
+
+async function saveNewOrder(){
+  const ids = Array.from(container.querySelectorAll('.cuve'))
+    .map(c => c.dataset.id)
+    .filter(id => id && id.trim() !== "");
+
+  if(ids.length === 0) return;
+
+  try{
+    const res = await fetch('save_order.php',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({order: ids})
+    });
+    const data = await res.json();
+    console.log('Ordre sauvegardé', data);
+  }catch(e){
+    console.error('Erreur sauvegarde ordre', e);
+  }
+}
+
+// Initialisation du drag & drop
+initDragAndDrop();
 </script>
 </body>
 </html>
