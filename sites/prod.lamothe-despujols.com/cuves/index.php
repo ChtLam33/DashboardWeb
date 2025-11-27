@@ -1,5 +1,5 @@
 <?php
-// --- Lecture du CACHE JSON ---
+// --- Lecture du CACHE JSON ---modif
 $cacheFile  = __DIR__ . "/cache_dashboard.json";
 $configFile = __DIR__ . "/config_cuves.json";
 
