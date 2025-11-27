@@ -16,16 +16,11 @@ $newIds = [];
 foreach ($lines as $line) {
     $parts = str_getcsv($line, ";");
     if (count($parts) >= 3) {
-        $id      = trim($parts[1]); // 2e colonne = id capteur
+        $id      = trim($parts[1]); // 2e colonne = id ESP
         $nomCuve = trim($parts[2]); // 3e colonne = nom cuve
-
-        // On ignore la ligne d'en-tête et les IDs vides
-        if ($id && $id !== "id" && $id !== "cuve") {
-            // Si le nom de cuve est vide, on met un placeholder
-            if ($nomCuve === "") {
-                $nomCuve = "Cuve_?";
-            }
-            $newIds[$id] = $nomCuve;
+        // ✅ on ignore les mauvaises valeurs
+        if ($id && $id !== "id" && $id !== "cuve" && stripos($id, "ESP") === 0) {
+            $newIds[$id] = $nomCuve ?: "Cuve_?";
         }
     }
 }
@@ -34,9 +29,7 @@ foreach ($lines as $line) {
 $config = [];
 if (file_exists($jsonFile)) {
     $config = json_decode(file_get_contents($jsonFile), true);
-    if (!is_array($config)) {
-        $config = [];
-    }
+    if (!is_array($config)) $config = [];
 }
 
 // --- Vérifie chaque ID du CSV ---
@@ -48,12 +41,12 @@ foreach ($newIds as $id => $nomCuve) {
             break;
         }
     }
-
     if (!$exists) {
-        // ➕ Ajoute seulement les nouveaux capteurs
+        // ➕ Ajoute seulement les nouveaux
         $config[] = [
             "id"                 => $id,
             "nomCuve"            => $nomCuve,
+            "lot"                => "",      // nouveau champ, vide par défaut
             "hauteurCapteurFond" => 200,
             "hauteurMaxLiquide"  => 50,
             "diametreCuve"       => 70,
@@ -63,7 +56,8 @@ foreach ($newIds as $id => $nomCuve) {
     }
 }
 
-// --- Sauvegarde mise à jour ---
+// --- Sauvegarde si ajout(s) ---
 file_put_contents($jsonFile, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
 echo "✅ Vérification terminée (" . count($config) . " capteurs au total).";
+?>
