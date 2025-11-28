@@ -1,14 +1,17 @@
 <?php
-// --- Lecture du CACHE JSON ---modif
-$cacheFile  = __DIR__ . "/cache_dashboard.json";
-$configFile = __DIR__ . "/config_cuves.json";
+// --- Lecture du CACHE JSON ---
+$cacheFile   = __DIR__ . "/cache_dashboard.json";
+$configFile  = __DIR__ . "/config_cuves.json";
+$historyFile = __DIR__ . "/history_lots.json";
 
-$cuves  = [];
-$config = [];
+$cuves   = [];
+$config  = [];
+$history = [];
+$historyDisplay = [];
 
 // Charger le cache (dernières mesures)
 if (file_exists($cacheFile)) {
-    $json = file_get_contents($cacheFile);
+    $json  = file_get_contents($cacheFile);
     $cuves = json_decode($json, true) ?: [];
 }
 
@@ -25,18 +28,22 @@ function nf($v, $dec = 1) {
     return is_numeric($v) ? number_format((float)$v, $dec, ',', '') : '';
 }
 
-// --- Charger la config (pour ordre + lot) ---
-$lotById = [];
+// --- Charger la config (pour ordre + lot + couleur) ---
+$lotById   = [];
+$colorById = [];
+$config    = [];
 
 if (file_exists($configFile)) {
     $config = json_decode(file_get_contents($configFile), true);
     if (!is_array($config)) $config = [];
 }
 
-// Mapping ID → lot
+// Mapping ID → lot / couleur
 foreach ($config as $cfg) {
     if (!empty($cfg['id'])) {
-        $lotById[$cfg['id']] = isset($cfg['lot']) ? $cfg['lot'] : '';
+        $id = $cfg['id'];
+        $lotById[$id]   = isset($cfg['lot']) ? $cfg['lot'] : '';
+        $colorById[$id] = isset($cfg['couleur']) ? $cfg['couleur'] : '';
     }
 }
 
@@ -99,6 +106,25 @@ foreach ($cuves as $c) {
     $lotsTotals[$lotName] += (float)$vol;
     $totalGlobal          += (float)$vol;
 }
+
+// --- Charger l'historique des snapshots ---
+if (file_exists($historyFile)) {
+    $history = json_decode(file_get_contents($historyFile), true);
+    if (!is_array($history)) {
+        $history = [];
+    }
+}
+
+// Trier par date décroissante (les plus récents d'abord)
+if (!empty($history)) {
+    usort($history, function($a, $b) {
+        $da = isset($a['datetime']) ? $a['datetime'] : '';
+        $db = isset($b['datetime']) ? $b['datetime'] : '';
+        return strcmp($db, $da); // on veut le plus récent en premier
+    });
+    // On n'affiche que les 50 plus récents
+    $historyDisplay = array_slice($history, 0, 50);
+}
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -154,8 +180,31 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   outline:1px dashed var(--gold);
 }
 
-.head{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px}
-.head h2{margin:0;font-size:.95rem;color:var(--gold);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Ligne tête : wifi + nom + lot */
+.head{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  margin-bottom:6px;
+}
+.head h2{
+  margin:0;
+  font-size:.95rem;
+  font-weight:700;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.head .title-block{
+  display:flex;
+  align-items:baseline;
+  gap:4px;
+}
+.head .lot-label{
+  font-size:.8rem;
+  opacity:.9;
+}
 
 .wifi-icon{
   width:18px;height:18px;display:inline-block;
@@ -252,7 +301,7 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 }
 .popup-content{
   background:#101010;color:#eee;padding:16px;border-radius:12px;
-  width:90%;max-width:780px;border:1px solid #2a2a2a
+  width:90%;max-width:820px;border:1px solid #2a2a2a
 }
 .popup-content h3{margin:.2rem 0 10px;color:var(--gold)}
 .param-table{width:100%;border-collapse:collapse}
@@ -260,9 +309,13 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   border-bottom:1px solid #2a2a2a;padding:6px 8px;text-align:left;font-size:.9rem
 }
 .param-table th{background:#141414;color:#d8c07a}
-.param-table input{
+.param-table input, .param-table select{
   width:100%;border:1px solid #3a3a3a;border-radius:6px;
-  padding:6px;background:#0e0e0e;color:#eee
+  padding:6px;background:#0e0e0e;color:#eee;
+  font-size:.85rem;
+}
+.param-table select{
+  padding-right:20px;
 }
 .popup-content button{
   background:var(--gold2);color:#000;border:none;padding:8px 14px;border-radius:8px;cursor:pointer
@@ -274,10 +327,32 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   padding:0 12px 16px 12px;
   margin-top:-4px;
 }
+.lots-summary-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
 .lots-summary h2{
   margin:6px 0;
   font-size:.95rem;
   color:var(--gold);
+}
+.snapshot-btn{
+  border:none;
+  background:rgba(243,210,107,0.12);
+  color:var(--gold);
+  border-radius:50%;
+  width:30px;
+  height:30px;
+  cursor:pointer;
+  font-size:1rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.snapshot-btn:hover{
+  background:rgba(243,210,107,0.25);
 }
 .lots-summary table{
   width:100%;
@@ -296,6 +371,52 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .lots-summary tfoot td{
   font-weight:700;
   border-top:1px solid #444;
+}
+
+/* Historique */
+.history-section{
+  padding:0 12px 16px 12px;
+}
+.history-section h2{
+  margin:6px 0;
+  font-size:.95rem;
+  color:var(--gold);
+}
+.history-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.85rem;
+}
+.history-table th,
+.history-table td{
+  padding:4px 6px;
+  border-bottom:1px solid #2a2a2a;
+}
+.history-table th{
+  text-align:left;
+  background:#171717;
+}
+.history-toggle{
+  width:24px;
+  text-align:center;
+  cursor:pointer;
+  font-weight:bold;
+}
+.history-toggle:hover{
+  background:#222;
+}
+.history-details td{
+  background:#151515;
+}
+.history-lots-inner{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.8rem;
+}
+.history-lots-inner th,
+.history-lots-inner td{
+  padding:3px 4px;
+  border-bottom:1px solid #2a2a2a;
 }
 </style>
 </head>
@@ -342,21 +463,90 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
       }
     }
 
-    $color = 'var(--unk)';
+    // Couleur titre / lot et liquide en fonction de la config
+    $configColorKey = isset($colorById[$id]) ? trim($colorById[$id]) : '';
+
+    switch ($configColorKey) {
+      case 'jauneClair':
+        $titleColor   = '#ffe57e';
+        $liquidColor1 = '#fff59d';
+        $liquidColor2 = '#ffe082';
+        break;
+
+      case 'jauneFonce':
+        $titleColor   = '#c79a00';
+        $liquidColor1 = '#fbc02d';
+        $liquidColor2 = '#c79a00';
+        break;
+
+      case 'vert':
+        $titleColor   = '#00e676';
+        $liquidColor1 = '#69f0ae';
+        $liquidColor2 = '#00e676';
+        break;
+
+      case 'gris':
+        $titleColor   = '#9aa0a6';
+        $liquidColor1 = '#cfd8dc';
+        $liquidColor2 = '#90a4ae';
+        break;
+
+      case 'violet':
+        $titleColor   = '#b388ff';
+        $liquidColor1 = '#e1bee7';
+        $liquidColor2 = '#b388ff';
+        break;
+
+      case 'rouge':
+        $titleColor   = '#ff5252';
+        $liquidColor1 = '#ff8a80';
+        $liquidColor2 = '#ff5252';
+        break;
+
+      case 'bleu':
+        $titleColor   = '#42a5f5';
+        $liquidColor1 = '#90caf9';
+        $liquidColor2 = '#42a5f5';
+        break;
+
+      case 'jaune': // compat éventuelle
+      case '':
+      default:
+        $titleColor   = 'var(--gold)';
+        $liquidColor1 = '#ffe57e';
+        $liquidColor2 = '#fbc02d';
+        break;
+    }
+
+    // Lot pour cette cuve
+    $lotName = isset($lotById[$id]) ? trim($lotById[$id]) : '';
+
+    // Couleur du pictogramme Wi-Fi
+    $wifiColor = 'var(--unk)';
     if ($isOffline) {
-      $color = 'var(--bad)';
+      $wifiColor = 'var(--bad)';
     } elseif ($rssi !== null) {
-      if ($rssi > -60)      $color = 'var(--ok)';
-      else if ($rssi > -75) $color = 'var(--mid)';
-      else                  $color = 'var(--bad)';
+      if     ($rssi > -65) $wifiColor = 'var(--ok)';
+      elseif ($rssi > -75) $wifiColor = 'var(--mid)';
+      else                 $wifiColor = 'var(--bad)';
+    }
+
+    // Détection obstacle / couvercle : distance < hPlein + 6 cm
+    $hasObstacle = false;
+    if ($hPlein !== null && $dist !== null && is_numeric($hPlein) && is_numeric($dist)) {
+      if ((float)$dist < ((float)$hPlein + 6.0)) {
+        $hasObstacle = true;
+      }
     }
   ?>
   <div class="cuve<?= $isOffline ? ' offline' : '' ?>"
        data-pourc="<?= $pourc ?>"
        data-id="<?= $id ?>"
+       data-liquid1="<?= htmlspecialchars($liquidColor1) ?>"
+       data-liquid2="<?= htmlspecialchars($liquidColor2) ?>"
        draggable="true">
     <div class="head">
-      <span class="wifi-icon" style="background-color:<?= $color ?>"
+      <span class="wifi-icon" style="background-color:<?= $wifiColor ?>"
         title="<?php
           if ($isOffline) {
             echo 'Capteur hors ligne'.($dtStr ? ' – dernière mesure : '.$dtStr : '');
@@ -368,7 +558,14 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
             }
           }
         ?>"></span>
-      <h2><?= $nom ?></h2>
+      <div class="title-block">
+        <h2 style="color:<?= htmlspecialchars($titleColor) ?>"><?= $nom ?></h2>
+        <?php if ($lotName !== ''): ?>
+          <span class="lot-label" style="color:<?= htmlspecialchars($titleColor) ?>">
+            (<?= htmlspecialchars($lotName) ?>)
+          </span>
+        <?php endif; ?>
+      </div>
     </div>
 
     <div class="bar">
@@ -389,6 +586,12 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         <div>Distance : <?= (int)$dist ?> cm</div>
       <?php endif; ?>
 
+      <?php if($hasObstacle): ?>
+        <div class="muted" style="color:#ffb74d;font-size:.8rem;">
+          ⚠️ Mesure incohérente (couvercle ou obstacle possible)
+        </div>
+      <?php endif; ?>
+
       <?php if($isOffline && $dtStr): ?>
         <div class="muted" style="font-size:.75rem;color:#ff6b6b;">
           ⚠ Capteur hors ligne – dernière mesure : <?= htmlspecialchars($dtStr) ?>
@@ -404,7 +607,12 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 
 <?php if (!empty($lotsTotals)): ?>
 <section class="lots-summary">
-  <h2>Volumes par lot</h2>
+  <div class="lots-summary-header">
+    <h2>Volumes par lot</h2>
+    <button class="snapshot-btn" type="button" onclick="saveLotsSnapshot()" title="Enregistrer un instantané des volumes par lot">
+      💾
+    </button>
+  </div>
   <table>
     <thead>
       <tr>
@@ -427,6 +635,66 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
       </tr>
     </tfoot>
   </table>
+</section>
+<?php endif; ?>
+
+<?php if (!empty($historyDisplay)): ?>
+<section class="history-section">
+  <h2>Historique des enregistrements</h2>
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th style="width:28px;"></th>
+        <th>Date</th>
+        <th>Total (HL)</th>
+        <th>Commentaire</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($historyDisplay as $idx => $snap):
+        $rowId = 'hist' . $idx;
+        $snapDate = isset($snap['datetime']) ? $snap['datetime'] : '';
+        $snapTotal = isset($snap['total_hl']) ? $snap['total_hl'] : null;
+        $snapComment = isset($snap['comment']) ? $snap['comment'] : '';
+        $snapLots = (isset($snap['lots']) && is_array($snap['lots'])) ? $snap['lots'] : [];
+      ?>
+      <tr class="history-row" data-details-id="<?= htmlspecialchars($rowId) ?>">
+        <td class="history-toggle">+</td>
+        <td><?= htmlspecialchars($snapDate) ?></td>
+        <td><?= nf($snapTotal, 2) ?></td>
+        <td><?= htmlspecialchars($snapComment) ?></td>
+      </tr>
+      <?php if (!empty($snapLots)): ?>
+      <tr class="history-details" id="<?= htmlspecialchars($rowId) ?>" style="display:none;">
+        <td colspan="4">
+          <table class="history-lots-inner">
+            <thead>
+              <tr>
+                <th>Lot</th>
+                <th>Volume (HL)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($snapLots as $lotInfo):
+                $hLotName = isset($lotInfo['lot']) ? $lotInfo['lot'] : '';
+                $hLotVol  = isset($lotInfo['volume_hl']) ? $lotInfo['volume_hl'] : null;
+              ?>
+              <tr>
+                <td><?= htmlspecialchars($hLotName) ?></td>
+                <td><?= nf($hLotVol, 2) ?></td>
+              </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+      <?php endif; ?>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:4px;font-size:.75rem;">
+    Les enregistrements les plus récents sont affichés en premier. (limite ~300 enregistrements en mémoire)
+  </p>
 </section>
 <?php endif; ?>
 
@@ -453,6 +721,35 @@ async function refreshData(){
   }catch(e){loading.innerText="⚠️ Erreur serveur";setTimeout(()=>loading.style.display='none',2000);}
 }
 
+// --- Enregistrement d'un snapshot des volumes par lot ---
+async function saveLotsSnapshot(){
+  const comment = prompt("Commentaire pour cet enregistrement (ex : 'avant collage') :","");
+  if(comment === null) return; // annuler
+
+  const loading = document.getElementById('loading');
+  loading.style.display='block';
+  loading.innerText="⏳ Enregistrement de l'instantané...";
+
+  try{
+    const res = await fetch('save_history.php',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({comment})
+    });
+    const data = await res.json();
+    if(data.status === "OK"){
+      loading.innerText = "✅ Instantané enregistré. Pense à actualiser pour voir l'historique à jour.";
+      setTimeout(()=>{ loading.style.display='none'; }, 3000);
+    }else{
+      loading.innerText = "⚠️ Erreur lors de l'enregistrement de l'instantané.";
+      setTimeout(()=>{ loading.style.display='none'; }, 3000);
+    }
+  }catch(e){
+    loading.innerText = "⚠️ Erreur réseau lors de l'enregistrement.";
+    setTimeout(()=>{ loading.style.display='none'; }, 3000);
+  }
+}
+
 // --- Paramètres ---
 let configData=[];
 async function showParamPopup(){
@@ -464,11 +761,33 @@ async function showParamPopup(){
     configData=await res.json();
     if(!Array.isArray(configData)){c.innerHTML="Erreur.";return;}
     let html=`<table class='param-table'>
-    <tr><th>ID</th><th>Nom</th><th>Lot</th><th>Capteur→Fond</th><th>Hauteur max</th><th>Diamètre</th><th>Aj. HL</th></tr>`;
+    <tr>
+      <th>ID</th>
+      <th>Nom</th>
+      <th>Couleur</th>
+      <th>Lot</th>
+      <th>Capteur→Fond</th>
+      <th>Hauteur max</th>
+      <th>Diamètre</th>
+      <th>Aj. HL</th>
+    </tr>`;
     configData.forEach((cu,i)=>{
+      const col = cu.couleur ?? '';
       html+=`<tr>
       <td>${cu.id}</td>
       <td><input value="${cu.nomCuve??''}" data-i="${i}" data-k="nomCuve"></td>
+      <td>
+        <select data-i="${i}" data-k="couleur">
+          <option value="" ${col===''?'selected':''}>Jaune (défaut)</option>
+          <option value="jauneClair" ${col==='jauneClair'?'selected':''}>Jaune clair</option>
+          <option value="jauneFonce" ${col==='jauneFonce'?'selected':''}>Jaune foncé</option>
+          <option value="vert" ${col==='vert'?'selected':''}>Vert</option>
+          <option value="gris" ${col==='gris'?'selected':''}>Gris</option>
+          <option value="violet" ${col==='violet'?'selected':''}>Violet</option>
+          <option value="rouge" ${col==='rouge'?'selected':''}>Rouge</option>
+          <option value="bleu" ${col==='bleu'?'selected':''}>Bleu</option>
+        </select>
+      </td>
       <td><input value="${cu.lot??''}" data-i="${i}" data-k="lot"></td>
       <td><input value="${cu.hauteurCapteurFond??''}" data-i="${i}" data-k="hauteurCapteurFond" type="number" step="0.1"></td>
       <td><input value="${cu.hauteurMaxLiquide??''}" data-i="${i}" data-k="hauteurMaxLiquide" type="number" step="0.1"></td>
@@ -478,8 +797,11 @@ async function showParamPopup(){
     });
     html+=`</table>`;
     c.innerHTML=html;
-    c.querySelectorAll('input').forEach(inp=>{
+    c.querySelectorAll('input,select').forEach(inp=>{
       inp.addEventListener('input',e=>{
+        const i=e.target.dataset.i,k=e.target.dataset.k;configData[i][k]=e.target.value;
+      });
+      inp.addEventListener('change',e=>{
         const i=e.target.dataset.i,k=e.target.dataset.k;configData[i][k]=e.target.value;
       });
     });
@@ -488,18 +810,53 @@ async function showParamPopup(){
   }
 }
 async function saveConfig(){
-  const c=document.getElementById('paramContainer');
-  c.insertAdjacentHTML('beforeend',"<p class='muted'>⏳ Sauvegarde...</p>");
+  const c = document.getElementById('paramContainer');
+
+  let statusEl = document.getElementById('saveStatus');
+  if (!statusEl) {
+    statusEl = document.createElement('p');
+    statusEl.id = 'saveStatus';
+    statusEl.className = 'muted';
+    c.appendChild(statusEl);
+  }
+
+  statusEl.style.color = '';
+  statusEl.textContent = "⏳ Sauvegarde en cours...";
+
   try{
-    const res=await fetch('save_config.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(configData)});
-    const d=await res.json();
-    if(d.status==="OK"){
-      c.insertAdjacentHTML('beforeend',"<p style='color:#7CFC00;'>✅ Sauvegardé</p>");
-    }else{
-      c.insertAdjacentHTML('beforeend',"<p style='color:#ff6b6b;'>⚠️ Erreur</p>");
+    const res = await fetch('save_config.php',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(configData)
+    });
+    const d = await res.json();
+
+    if (d.status === "OK") {
+      let remaining = 6;
+      statusEl.style.color = '#7CFC00';
+      statusEl.textContent =
+        `✅ Sauvegardé. Config prise en compte dans ${remaining}s (penser à actualiser).`;
+
+      const intervalId = setInterval(()=>{
+        remaining--;
+        if (remaining > 0) {
+          statusEl.textContent =
+            `✅ Sauvegardé. Config prise en compte dans ${remaining}s (penser à actualiser).`;
+        } else {
+          clearInterval(intervalId);
+          statusEl.textContent =
+            "✅ Sauvegardé. Config est prise en compte. (penser à actualiser)";
+        }
+      }, 1000);
+
+    } else {
+      statusEl.style.color = '#ff6b6b';
+      statusEl.textContent = "⚠️ Erreur lors de l'enregistrement de la configuration.";
     }
-  }catch(e){
-    c.insertAdjacentHTML('beforeend',"<p style='color:#ff6b6b;'>⚠️ Impossible de contacter le serveur.</p>");
+
+  } catch(e){
+    statusEl.style.color = '#ff6b6b';
+    statusEl.textContent = "⚠️ Impossible de contacter le serveur.";
   }
 }
 function hideParamPopup(){document.getElementById('paramPopup').style.display='none';}
@@ -512,6 +869,8 @@ document.querySelectorAll('.canvas-wave').forEach((canvas,i)=>{
   window.addEventListener('resize',resize);resize();
   const parent=canvas.closest('.cuve');
   const pourc=parseFloat(parent.dataset.pourc)||0;
+  const c1 = parent.dataset.liquid1 || '#ffe57e';
+  const c2 = parent.dataset.liquid2 || '#fbc02d';
   function draw(){
     ctx.clearRect(0,0,w,h);
     const amp=2, freq=0.04, speed=0.02;
@@ -525,8 +884,8 @@ document.querySelectorAll('.canvas-wave').forEach((canvas,i)=>{
     ctx.lineTo(w,h);
     ctx.closePath();
     const grd=ctx.createLinearGradient(0,level,w,h);
-    grd.addColorStop(0,'#ffe57e');
-    grd.addColorStop(1,'#fbc02d');
+    grd.addColorStop(0,c1);
+    grd.addColorStop(1,c2);
     ctx.fillStyle=grd;
     ctx.fill();
     phase+=speed;
@@ -605,7 +964,26 @@ async function saveNewOrder(){
   }
 }
 
+// --- Toggle historique (afficher / masquer les détails par lot) ---
+function initHistoryToggle(){
+  const rows = document.querySelectorAll('.history-row');
+  rows.forEach(row=>{
+    const toggleCell = row.querySelector('.history-toggle');
+    if(!toggleCell) return;
+    toggleCell.addEventListener('click', ()=>{
+      const id = row.dataset.detailsId;
+      if(!id) return;
+      const details = document.getElementById(id);
+      if(!details) return;
+      const isHidden = (details.style.display === 'none' || details.style.display === '');
+      details.style.display = isHidden ? 'table-row' : 'none';
+      toggleCell.textContent = isHidden ? '−' : '+';
+    });
+  });
+}
+
 initDragAndDrop();
+initHistoryToggle();
 </script>
 </body>
 </html>

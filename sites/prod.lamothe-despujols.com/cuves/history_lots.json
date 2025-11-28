@@ -1,0 +1,48 @@
+[
+    {
+        "datetime": "2025-11-28 00:49:12",
+        "comment": "test0",
+        "total_hl": 46.739999999999995,
+        "lots": [
+            {
+                "lot": "Sec25",
+                "volume_hl": 17.09
+            },
+            {
+                "lot": "SE2025",
+                "volume_hl": 4.55
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 8.879999999999999
+            },
+            {
+                "lot": "L2025",
+                "volume_hl": 16.22
+            }
+        ]
+    },
+    {
+        "datetime": "2025-11-28 00:49:41",
+        "comment": "test1",
+        "total_hl": 46.739999999999995,
+        "lots": [
+            {
+                "lot": "Sec25",
+                "volume_hl": 17.09
+            },
+            {
+                "lot": "SE2025",
+                "volume_hl": 4.55
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 8.879999999999999
+            },
+            {
+                "lot": "L2025",
+                "volume_hl": 16.22
+            }
+        ]
+    }
+]

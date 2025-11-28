@@ -1,43 +1,53 @@
 [
     {
         "id": "07009A50528",
-        "nomCuve": "Cuve_1",
-        "hauteurCapteurFond": 200,
-        "hauteurMaxLiquide": 50,
-        "diametreCuve": 70,
-        "AjustementHL": 0
+        "nomCuve": "Cuve_22",
+        "hauteurCapteurFond": 253,
+        "hauteurMaxLiquide": 115,
+        "diametreCuve": 133,
+        "AjustementHL": 0,
+        "lot": "Sec25",
+        "couleur": ""
     },
     {
         "id": "CD50AA50528",
-        "nomCuve": "Cuve_2",
-        "hauteurCapteurFond": 200,
-        "hauteurMaxLiquide": 50,
-        "diametreCuve": 70,
-        "AjustementHL": 0
+        "nomCuve": "Cuve_23",
+        "hauteurCapteurFond": 258.8,
+        "hauteurMaxLiquide": 121.3,
+        "diametreCuve": 93.8,
+        "AjustementHL": 0,
+        "lot": "SE2025",
+        "couleur": "jauneFonce"
     },
     {
         "id": "C7B0BA50528",
-        "nomCuve": "Cuve_3",
-        "hauteurCapteurFond": 200,
-        "hauteurMaxLiquide": 50,
-        "diametreCuve": 70,
-        "AjustementHL": 0
+        "nomCuve": "Cuve_21",
+        "hauteurCapteurFond": 277,
+        "hauteurMaxLiquide": 158.5,
+        "diametreCuve": 75,
+        "AjustementHL": 0,
+        "lot": "",
+        "couleur": ""
     },
     {
         "id": "0050BA50528",
-        "nomCuve": "Cuve_4",
-        "hauteurCapteurFond": 200,
-        "hauteurMaxLiquide": 50,
-        "diametreCuve": 70,
-        "AjustementHL": 0
+        "nomCuve": "Cuve_14",
+        "hauteurCapteurFond": 272,
+        "hauteurMaxLiquide": 122,
+        "diametreCuve": 98,
+        "AjustementHL": 0,
+        "lot": "L2025",
+        "couleur": ""
     },
     {
         "id": "C690BA50528",
-        "nomCuve": "Cuve_5",
-        "hauteurCapteurFond": 200,
-        "hauteurMaxLiquide": 50,
-        "diametreCuve": 70,
-        "AjustementHL": 0
+        "nomCuve": "Cuve_15",
+        "hauteurCapteurFond": 256.6,
+        "hauteurMaxLiquide": 126.6,
+        "diametreCuve": 69.7,
+        "AjustementHL": 0,
+        "lot": "L2025",
+        "couleur": ""
     },
     {
         "id": "4DB0AA50528",
@@ -45,7 +55,8 @@
         "hauteurCapteurFond": 200,
         "hauteurMaxLiquide": 50,
         "diametreCuve": 70,
-        "AjustementHL": 0
+        "AjustementHL": 0,
+        "lot": ""
     },
     {
         "id": "CD15D40C86C",
@@ -53,7 +64,8 @@
         "hauteurCapteurFond": 200,
         "hauteurMaxLiquide": 50,
         "diametreCuve": 70,
-        "AjustementHL": 0
+        "AjustementHL": 0,
+        "lot": ""
     },
     {
         "id": "4F90AA50528",
@@ -61,7 +73,8 @@
         "hauteurCapteurFond": 200,
         "hauteurMaxLiquide": 50,
         "diametreCuve": 70,
-        "AjustementHL": 0
+        "AjustementHL": 0,
+        "lot": ""
     },
     {
         "id": "0C80AA50528",
@@ -69,7 +82,8 @@
         "hauteurCapteurFond": 200,
         "hauteurMaxLiquide": 50,
         "diametreCuve": 70,
-        "AjustementHL": 0
+        "AjustementHL": 0,
+        "lot": ""
     },
     {
         "id": "87509A50528",
@@ -77,6 +91,7 @@
         "hauteurCapteurFond": 200,
         "hauteurMaxLiquide": 50,
         "diametreCuve": 70,
-        "AjustementHL": 0
+        "AjustementHL": 0,
+        "lot": ""
     }
 ]
