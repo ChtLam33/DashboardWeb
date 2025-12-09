@@ -1,5 +1,3 @@
-# Dashboard Web – Cuves (Château Lamothe Despujols)
-
 
 # Dashboard Web – Cuves & Barriques  
 Château Lamothe Despujols
