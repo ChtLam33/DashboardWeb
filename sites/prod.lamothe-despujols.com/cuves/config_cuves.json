@@ -1,0 +1,82 @@
+[
+    {
+        "id": "CD15D40C86C",
+        "nomCuve": "Cuve_19",
+        "hauteurCapteurFond": 297.5,
+        "hauteurMaxLiquide": 105,
+        "diametreCuve": 100,
+        "AjustementHL": 0,
+        "lot": "L25",
+        "couleur": ""
+    },
+    {
+        "id": "07009A50528",
+        "nomCuve": "Cuve_22",
+        "hauteurCapteurFond": 256.4,
+        "hauteurMaxLiquide": 118.4,
+        "diametreCuve": 133.8,
+        "AjustementHL": 0,
+        "lot": "SEC25",
+        "couleur": "vert"
+    },
+    {
+        "id": "CD50AA50528",
+        "nomCuve": "Cuve_23",
+        "hauteurCapteurFond": 273.5,
+        "hauteurMaxLiquide": 135,
+        "diametreCuve": 94,
+        "AjustementHL": 0,
+        "lot": "SE25",
+        "couleur": "violet"
+    },
+    {
+        "id": "C7B0BA50528",
+        "nomCuve": "Cuve_21",
+        "hauteurCapteurFond": 275,
+        "hauteurMaxLiquide": 156.5,
+        "diametreCuve": 75,
+        "AjustementHL": 0,
+        "lot": "",
+        "couleur": ""
+    },
+    {
+        "id": "0050BA50528",
+        "nomCuve": "Cuve_14",
+        "hauteurCapteurFond": 266,
+        "hauteurMaxLiquide": 132,
+        "diametreCuve": 98,
+        "AjustementHL": 0,
+        "lot": "L25",
+        "couleur": ""
+    },
+    {
+        "id": "C690BA50528",
+        "nomCuve": "Cuve_15",
+        "hauteurCapteurFond": 269,
+        "hauteurMaxLiquide": 136.5,
+        "diametreCuve": 69.7,
+        "AjustementHL": 0,
+        "lot": "L25",
+        "couleur": ""
+    },
+    {
+        "id": "4DB0AA50528",
+        "nomCuve": "Cuve_18",
+        "hauteurCapteurFond": 242,
+        "hauteurMaxLiquide": 150,
+        "diametreCuve": 65,
+        "AjustementHL": 0,
+        "lot": "",
+        "couleur": "bleu"
+    },
+    {
+        "id": "0C80AA50528",
+        "nomCuve": "Cuve_20",
+        "hauteurCapteurFond": 246.5,
+        "hauteurMaxLiquide": 54,
+        "diametreCuve": 119,
+        "AjustementHL": 0,
+        "lot": "SEC25",
+        "couleur": "vert"
+    }
+]
