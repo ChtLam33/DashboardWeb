@@ -1,8 +1,0 @@
-{
-    "mode": "daily",
-    "include_battery": true,
-    "include_offline": true,
-    "weekly_day": 2,
-    "measure_interval_days": 1,
-    "offline_grace_days": 0
-}
