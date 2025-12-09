@@ -11,7 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Récupère les données JSON envoyées
 $input = file_get_contents("php://input");
-$data = json_decode($input, true);
+$data  = json_decode($input, true);
 
 if (!$data || !is_array($data)) {
     http_response_code(400);
@@ -19,15 +19,20 @@ if (!$data || !is_array($data)) {
     exit;
 }
 
-// Convertit les champs numériques en float
+// Normalisation des champs
 foreach ($data as &$cuve) {
-    $cuve['id'] = trim($cuve['id']);
-    $cuve['nomCuve'] = trim($cuve['nomCuve']);
-    $cuve['hauteurCapteurFond'] = floatval($cuve['hauteurCapteurFond']);
-    $cuve['hauteurMaxLiquide'] = floatval($cuve['hauteurMaxLiquide']);
-    $cuve['diametreCuve'] = floatval($cuve['diametreCuve']);
-    $cuve['AjustementHL'] = floatval($cuve['AjustementHL']);
+    $cuve['id']    = isset($cuve['id'])    ? trim($cuve['id'])    : '';
+    $cuve['nomCuve'] = isset($cuve['nomCuve']) ? trim($cuve['nomCuve']) : '';
+
+    // Nouveau champ : lot
+    $cuve['lot'] = isset($cuve['lot']) ? trim($cuve['lot']) : '';
+
+    $cuve['hauteurCapteurFond'] = isset($cuve['hauteurCapteurFond']) ? floatval($cuve['hauteurCapteurFond']) : 0.0;
+    $cuve['hauteurMaxLiquide']  = isset($cuve['hauteurMaxLiquide'])  ? floatval($cuve['hauteurMaxLiquide'])  : 0.0;
+    $cuve['diametreCuve']       = isset($cuve['diametreCuve'])       ? floatval($cuve['diametreCuve'])       : 0.0;
+    $cuve['AjustementHL']       = isset($cuve['AjustementHL'])       ? floatval($cuve['AjustementHL'])       : 0.0;
 }
+unset($cuve);
 
 // Chemin du fichier
 $file = __DIR__ . "/config_cuves.json";

@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $input = file_get_contents("php://input");
-$data = json_decode($input, true);
+$data  = json_decode($input, true);
 
 if (!$data) {
     http_response_code(400);
@@ -21,75 +21,55 @@ if (!$data) {
 }
 
 // --- Données reçues depuis l'ESP32 ---
-$id           = htmlspecialchars($data['id'] ?? 'sans_id');
+$id           = htmlspecialchars($data['id']   ?? 'sans_id');
 $cuve         = htmlspecialchars($data['cuve'] ?? 'inconnue');
-$distance     = floatval($data['distance'] ?? 0);
-$volume       = floatval($data['volume'] ?? 0);
-$capacite     = floatval($data['capacite'] ?? 0);
-$pourcentage  = floatval($data['pourcentage'] ?? 0);
-$correction   = floatval($data['correction'] ?? 0);
-$hauteurPlein = intval($data['hauteurPlein'] ?? 0);
-$hauteurCuve  = intval($data['hauteurCuve'] ?? 0);
+$distance     = floatval($data['distance']     ?? 0);
+$volume       = floatval($data['volume']       ?? 0);
+$capacite     = floatval($data['capacite']     ?? 0);
+$pourcentage  = floatval($data['pourcentage']  ?? 0);
+$correction   = floatval($data['correction']   ?? 0);
+
+// ⚠ ICI : on passe en float pour garder les décimales
+$hauteurPlein = round(floatval($data['hauteurPlein'] ?? 0), 1, PHP_ROUND_HALF_UP);
+$hauteurCuve  = round(floatval($data['hauteurCuve']  ?? 0), 1, PHP_ROUND_HALF_UP);
+
 $rssi         = intval($data['rssi'] ?? 0);  // force du signal Wi-Fi (dBm)
 
 // --- Fichier de stockage ---
 $file   = __DIR__ . "/data_cuves.csv";
 $header = "datetime;id;cuve;distance_cm;volume_hl;capacite_hl;pourcentage;correction;hauteur_plein_cm;hauteur_cuve_cm;rssi";
 
-// On va construire un tableau $lines qui contient toujours une première ligne = en-tête
-$lines = [];
-
-// 1) Si le fichier n'existe pas → on crée un tableau avec juste l'en-tête
+// Si le fichier n'existe pas, on le crée avec l'en-tête complet
 if (!file_exists($file)) {
-    $lines[] = $header;
-} else {
-    // 2) Le fichier existe → on lit les lignes (en ignorant les lignes totalement vides)
-    $rawLines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-
-    // a) Fichier vide → on remet l'en-tête
-    if (empty($rawLines)) {
-        $lines[] = $header;
-    } else {
-        // b) Si la première ligne ne commence pas par "datetime" → on préprend l'en-tête
-        if (!str_starts_with($rawLines[0], 'datetime')) {
-            $lines[] = $header;
-            foreach ($rawLines as $ln) {
-                $lines[] = $ln;
-            }
-        } else {
-            // c) En-tête présente → on s'assure qu'elle contient bien "rssi"
-            $first = $rawLines[0];
-            if (!str_contains($first, 'rssi')) {
-                $first = rtrim($first, " \t\r\n") . ';rssi';
-            }
-            $lines[] = $first;
-
-            // On recopie le reste des lignes telles quelles
-            for ($i = 1; $i < count($rawLines); $i++) {
-                $lines[] = $rawLines[$i];
-            }
-        }
-    }
+    file_put_contents($file, $header . "\n");
 }
 
-// À partir d'ici, $lines[0] est garanti être une en-tête valide
+// Lecture du CSV existant
+$lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+if ($lines === false) {
+    $lines = [];
+}
+
 $newLines = [];
 $found    = false;
 
-// Mise à jour ou ajout de la ligne correspondante
-foreach ($lines as $line) {
-    // On laisse passer l'en-tête telle quelle
-    if (str_starts_with($line, 'datetime')) {
-        $newLines[] = $line;
+// On repart toujours d'un en-tête canonique, quoi qu'il arrive
+$headerLine = trim($header);
+$newLines[] = $headerLine;
+
+// Parcours des anciennes lignes, en ignorant l'ancienne première ligne
+foreach ($lines as $index => $line) {
+    // On saute l'ancien header (index 0 ou toute ligne qui commence par "datetime")
+    if ($index === 0 || str_starts_with($line, 'datetime')) {
         continue;
     }
 
     $cols = str_getcsv($line, ';');
 
     if (isset($cols[1]) && $cols[1] === $id) {
-        // On remplace la ligne existante pour ce capteur
+        // On remplace la ligne existante
         $newLine = sprintf(
-            "%s;%s;%s;%d;%.2f;%.2f;%.2f;%.2f;%d;%d;%d",
+            "%s;%s;%s;%d;%.2f;%.2f;%.2f;%.2f;%.1f;%.1f;%d",
             date('Y-m-d H:i:s'),
             $id,
             $cuve,
@@ -105,15 +85,15 @@ foreach ($lines as $line) {
         $newLines[] = $newLine;
         $found = true;
     } else {
-        // On recopie les autres lignes telles quelles
+        // On garde la ligne telle quelle
         $newLines[] = $line;
     }
 }
 
-// Si pas encore présent, on ajoute une nouvelle ligne pour ce capteur
+// Si pas encore présent, on ajoute une nouvelle ligne
 if (!$found) {
     $newLine = sprintf(
-        "%s;%s;%s;%d;%.2f;%.2f;%.2f;%.2f;%d;%d;%d",
+        "%s;%s;%s;%d;%.2f;%.2f;%.2f;%.2f;%.1f;%.1f;%d",
         date('Y-m-d H:i:s'),
         $id,
         $cuve,
@@ -139,4 +119,3 @@ echo json_encode([
     "cuve"      => $cuve,
     "timestamp" => date('Y-m-d H:i:s')
 ]);
-?>
