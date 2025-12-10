@@ -1,0 +1,67 @@
+Pour pouvoir mettre à jour le firmware, il faut modifier la version dans le fichier. Json si elle est supérieure et qu'il y a bien le fichier firmware.bin dans ce même dossier alors la mise à jour OTA se fera lors de la prochaine prise de mesure (si deep sleep) ou directement si le mode maintenance a été activé dans le dashboard, ou alors se fera après un reset du capteur.
+
+Librairies requises (firmware Cuves & Barriques) :
+
+- ESP32 Core .................. v3.3.3
+- ArduinoJson ................. v7.4.2
+- WiFiManager ................. v2.0.17
+- TFmini ...................... v0.1.0 (cuves uniquement)
+
+
+Méthode de travail pour mettre à jour le finmware 
+
+1. Cas actuel : tu bosses sur Arduino + PC, puis tu veux mettre Codespaces à jour
+Sur le PC (Arduino + GitHub Desktop)
+Tu modifies ton .ino dans Arduino.
+Tu testes, tu es content.
+Dans GitHub Desktop :
+Tu vois les changements → Commit to main
+Puis Push origin
+👉 À ce moment-là, GitHub.com est à jour (1.0.6, 1.0.7, etc.)
+Sur Codespaces
+Tu ouvres ton repo dans Codespaces.
+S’il y a des changements locaux parasites (icône “Valider” bleue, fichiers marqués comme modifiés) :
+Menu Contrôle de code source → … → Ignorer toutes les modifications
+(pour repartir sur un workspace propre)
+Ensuite :
+Menu Tirer / envoyer → Tirer (ou Synchroniser)
+👉 Codespaces se met à jour avec ce qu’il y a sur GitHub.com.
+✅ Donc ta mémoire :
+“Quand j’ai bossé sur Arduino + GitHub Desktop, pour mettre Codespaces à jour :
+Ignorer toutes les modifications → Pull”
+C’est exactement ça, mais seulement si Codespaces avait des changements non commit.
+Si Codespaces n’a rien de modifié, un simple Pull/Synchroniser suffit.
+
+2. Cas inverse : tu bosses sur Codespaces, puis tu veux remettre ton PC/Arduino à jour
+C’est ce qui va arriver quand tu feras surtout les modifs dans Codespaces depuis la tablette.
+Sur Codespaces
+Tu modifies ton .ino (par exemple tu passes à 1.0.7).
+Dans la vue Contrôle de code source :
+Tu fais Commit sur main.
+Puis tu fais Push (Tirer / envoyer → Envoyer / Push ou Synchroniser).
+👉 Là encore, GitHub.com est à jour.
+Sur ton PC (GitHub Desktop + Arduino)
+Tu ouvres GitHub Desktop.
+En haut, il va te proposer un Pull (ou “Fetch origin” puis “Pull”).
+Tu fais Pull.
+Ton dossier local sur le PC est maintenant à jour (tu verras FW_VERSION "1.0.7" dans Arduino).
+⚠️ Important :
+Si tu n’as fait AUCUNE modif locale sur le PC → un simple Pull dans GitHub Desktop, et c’est bon.
+Si tu avais commencé à bricoler des trucs non commit sur le PC, là aussi, il faudrait :
+soit commit ce que tu as fait,
+soit discard/ignorer les changements locaux avant de pull.
+
+3. En pratique, pour toi
+Vu ta manière de bosser, tu peux te fixer une règle simple :
+Quand tu travailles sur PC + Arduino :
+Tu considères ce PC comme la “source”, tu commits + push depuis GitHub Desktop.
+Puis tu “rattrapes” Codespaces avec Pull (en ayant nettoyé les changements non commit).
+Quand tu travailles sur Codespaces (tablette) :
+Tu commits + push dans Codespaces.
+Puis sur le PC, dans GitHub Desktop, tu fais un Pull pour remettre Arduino à jour.
+👉 Le centre de vérité, c’est toujours GitHub.com (le remote).
+PC et Codespaces sont juste deux copies qui doivent régulièrement pull pour rester synchro.
+
+Reste à savoir comment obtenir un .Bin avec github code space à partir du fichier ino
+Ensuite il suffit juste de mettre le fichier firmware.bin avec le panneau d'administration infomaniak en cliquant sur Web hébergement puis sur l'hébergement puis FTP menu, 
+L'application Android x-plore et aussi excellente pour faire les transferts au serveur avec la tablette en toute simplicité.

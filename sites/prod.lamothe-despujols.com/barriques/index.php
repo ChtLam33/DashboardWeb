@@ -17,7 +17,7 @@ if (file_exists($configLotsFile)) {
 }
 
 /* =========================================================
-   2) CONFIG NOTIFICATIONS
+   2) CONFIG NOTIFICATIONS (dashboard / alertes)
    ========================================================= */
 $notifConfigFile = __DIR__ . '/notifications_config.json';
 $notifConfig = [
@@ -55,6 +55,41 @@ if (file_exists($notifConfigFile)) {
         }
     }
 }
+
+/* =========================================================
+   2bis) CONFIG GLOBALE CAPTEURS (FIRMWARE)
+   - Fichier: /barriques/config.json
+   - Utilisé par les capteurs (OTA, deep-sleep)
+   ========================================================= */
+$barConfigFile = __DIR__ . '/config.json';
+$barConfig = [
+    'measure_interval_s'    => 604800, // 7 jours en secondes
+    'maintenance'           => true,   // true = pas de deep-sleep (mode maintenance)
+    'test_mode'             => false,  // mode test désactivé par défaut
+    'measure_interval_days' => 7,      // dérivé pour le formulaire
+];
+
+if (file_exists($barConfigFile)) {
+    $jsonBar = file_get_contents($barConfigFile);
+    $dataBar = json_decode($jsonBar, true);
+    if (is_array($dataBar)) {
+        if (isset($dataBar['measure_interval_s'])) {
+            $barConfig['measure_interval_s'] = max(60, (int)$dataBar['measure_interval_s']);
+        }
+        if (isset($dataBar['maintenance'])) {
+            $barConfig['maintenance'] = (bool)$dataBar['maintenance'];
+        }
+        if (isset($dataBar['test_mode'])) {
+            $barConfig['test_mode'] = (bool)$dataBar['test_mode'];
+        }
+    }
+}
+
+// Conversion secondes -> jours pour l'affichage
+$barConfig['measure_interval_days'] = max(
+    1,
+    (int)round($barConfig['measure_interval_s'] / 86400)
+);
 
 /* =========================================================
    3) TRAITEMENT FORMULAIRES
@@ -139,7 +174,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
    ========================================================= */
 $logFile  = __DIR__ . '/logs/barriques.log';
 $capteurs = []; // id => infos dernière mesure
-
 $logLines = [];
 if (file_exists($logFile)) {
     $logLines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -172,9 +206,6 @@ ksort($capteurs);
 
 /* =========================================================
    5) AGRÉGATION PAR LOT (ACTIFS)
-   - barriques_total = max barriques parmi les capteurs du lot
-   - creux moyen (Lmin / Lmax) sur les capteurs du lot
-   - ouillage_min / ouillage_max = barriques_total * creux_moyen
    ========================================================= */
 $lotsAgg = []; // lot_name => stats
 
@@ -251,11 +282,7 @@ foreach (array_keys($lotsAgg) as $lotName) {
 
 /* =========================================================
    5.1) PART DES ANGES (lots actifs)
-   - On cumule toutes les diminutions de creux (en L) par capteur
-   - On ramène à la barrique, puis on multiplie par le nb de barriques du lot
    ========================================================= */
-
-// 5.1.1 Historique complet par capteur (ts, creux_min, creux_max)
 $historyById = [];
 
 if (!empty($logLines)) {
@@ -291,7 +318,7 @@ if (!empty($logLines)) {
     unset($arr);
 }
 
-// 5.1.2 Périodes de lots (lot_history.json), format robuste
+// Périodes de lots (lot_history.json)
 $lotPeriods = [];
 $lotHistoryFile = __DIR__ . '/lot_history.json';
 
@@ -362,7 +389,7 @@ if (file_exists($lotHistoryFile)) {
     }
 }
 
-// 5.1.3 Calcul Part des anges par lot (en L)
+// Calcul Part des anges par lot (en L)
 foreach ($configLots as $id => $cfg) {
     $lotName = trim($cfg['lot'] ?? '');
     if ($lotName === '' || !isset($lotsAgg[$lotName])) {
@@ -377,7 +404,7 @@ foreach ($configLots as $id => $cfg) {
     // Déterminer le début pour ce capteur + lot
     $startTs = null;
     if (isset($lotPeriods[$id][$lotName])) {
-        // On cherche une période en cours (to_ts null), sinon la dernière période de ce lot
+        // période en cours (to_ts null), sinon la dernière période
         foreach ($lotPeriods[$id][$lotName] as $p) {
             if ($p['to_ts'] === null) {
                 $startTs = $p['from_ts'];
@@ -402,7 +429,7 @@ foreach ($configLots as $id => $cfg) {
         $filtered[] = $e;
     }
     if (count($filtered) < 2) {
-        continue; // pas assez de points pour voir une variation
+        continue;
     }
 
     $prevMin = null;
@@ -459,13 +486,9 @@ foreach (array_keys($lotsAgg) as $lotName) {
 
     unset($agg);
 }
+
 /* =========================================================
    5bis) LECTURE HISTORIQUE DES LOTS (ARCHIVES)
-   - On utilise lot_history.json
-   - Un lot est considéré "archivé" si :
-       * il a au moins une période dans lot_history.json
-       * il n'est plus dans $lotsAgg (plus de capteur actif dessus)
-       * et il n'a plus aucune période "ouverte" (end_ts/to_ts = null)
    ========================================================= */
 $archivedLots = [];
 $lotHistoryFile = __DIR__ . '/lot_history.json';
@@ -476,20 +499,8 @@ if (file_exists($lotHistoryFile)) {
 
     if (is_array($hist)) {
         // Deux formats possibles :
-        // 1) Format "par capteur" (ton fichier actuel) :
-        //    {
-        //      "330989340": [
-        //         {"lot":"SE16","from_ts":...,"to_ts":...},
-        //         ...
-        //      ],
-        //      ...
-        //    }
-        //
-        // 2) Format "plat" :
-        //    [
-        //      {"id":"330989340","lot":"SE16","start_ts":...,"end_ts":...},
-        //      ...
-        //    ]
+        // 1) Format "par capteur"
+        // 2) Format "plat"
         $isAssoc = array_keys($hist) !== range(0, count($hist) - 1);
 
         if ($isAssoc) {
@@ -631,6 +642,25 @@ function labelJour($n) {
     ];
     return $jours[$n] ?? 'Mardi';
 }
+
+/**
+ * Capteur inactif ?
+ * - ts : timestamp de la dernière mesure
+ * - intervalDays : fréquence attendue (jours)
+ * - graceDays : marge avant alerte (jours)
+ */
+function isCapteurInactive(int $ts, int $intervalDays, int $graceDays): bool {
+    if ($ts <= 0) return false;
+    $now = time();
+    $ageSec   = $now - $ts;
+    $limitSec = ($intervalDays + $graceDays) * 86400;
+    return $ageSec > $limitSec;
+}
+
+// Paramètres pour l’inactivité dans le dashboard
+$inactiveMeasureDays = max(1, (int)$barConfig['measure_interval_days']);
+$inactiveGraceDays   = max(0, (int)$notifConfig['offline_grace_days']);
+
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -798,6 +828,10 @@ function labelJour($n) {
             font-size: 11px;
             color: var(--text-muted);
         }
+        .small.inactive {
+            color: #ef4444;
+            font-weight: 600;
+        }
         .battery {
             font-family: monospace;
         }
@@ -880,7 +914,7 @@ function labelJour($n) {
             border-radius: 8px;
             padding: 1.5rem;
             min-width: 260px;
-            max-width: 340px;
+            max-width: 360px;
             color: #f5f5f5;
             box-shadow: 0 0 20px rgba(0,0,0,0.6);
         }
@@ -928,6 +962,10 @@ function labelJour($n) {
             background: #0b0e13;
             color: #f5f5f5;
             font-size: 0.9rem;
+        }
+        input[disabled] {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
     </style>
 </head>
@@ -1003,6 +1041,13 @@ function labelJour($n) {
                             // Date FR
                             $dateAff = formatDateFr($info['date_iso']);
 
+                            // Capteur inactif ?
+                            $inactive = isCapteurInactive(
+                                (int)$info['ts'],
+                                $inactiveMeasureDays,
+                                $inactiveGraceDays
+                            );
+
                             // RSSI coloré
                             $rssiClassStr = rssiClass($info['rssi']);
 
@@ -1048,7 +1093,9 @@ function labelJour($n) {
                                 <td><?php echo $info['raw']; ?></td>
                                 <td class="rssi <?php echo $rssiClassStr; ?>"><?php echo $info['rssi']; ?> dBm</td>
                                 <td><?php echo $batteryHtml; ?></td>
-                                <td class="small"><?php echo htmlspecialchars($dateAff, ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td class="small<?php echo $inactive ? ' inactive' : ''; ?>">
+                                    <?php echo htmlspecialchars($dateAff, ENT_QUOTES, 'UTF-8'); ?>
+                                </td>
                                 <td class="small"><?php echo htmlspecialchars($info['fw'], ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td>
                                     <button
@@ -1156,46 +1203,46 @@ function labelJour($n) {
         <?php endif; ?>
 
         <!-- Historique des anciens lots (archives) -->
-<?php if (!empty($archivedLots)): ?>
-    <div class="card">
-        <div class="card-header"
-             id="toggle-archives"
-             style="cursor:pointer;display:flex;align-items:center;gap:8px;">
-            <span id="archives-toggle-icon">➕</span>
-            <span class="section-title">Historique des anciens lots</span>
-        </div>
-        <div class="card-body" id="archives-body" style="display:none;">
-            <table>
-                <thead>
-                <tr>
-                    <th>Lot</th>
-                    <th>Période suivie</th>
-                    <th>Actions</th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($archivedLots as $lotName => $info): ?>
-                    <?php
-                    $start = date('d/m/Y', $info['min_start']);
-                    $end   = date('d/m/Y', $info['max_end']);
-                    ?>
-                    <tr>
-                        <td><?php echo htmlspecialchars($lotName, ENT_QUOTES, 'UTF-8'); ?></td>
-                        <td><?php echo $start . ' → ' . $end; ?></td>
-                        <td>
-                            <a
-                                href="history_lot.php?lot=<?php echo urlencode($lotName); ?>"
-                                class="save-btn"
-                                title="Voir l'historique de ce lot"
-                            >📈</a>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-<?php endif; ?>
+        <?php if (!empty($archivedLots)): ?>
+            <div class="card">
+                <div class="card-header"
+                     id="toggle-archives"
+                     style="cursor:pointer;display:flex;align-items:center;gap:8px;">
+                    <span id="archives-toggle-icon">➕</span>
+                    <span class="section-title">Historique des anciens lots</span>
+                </div>
+                <div class="card-body" id="archives-body" style="display:none;">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Lot</th>
+                            <th>Période suivie</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($archivedLots as $lotName => $info): ?>
+                            <?php
+                            $start = date('d/m/Y', $info['min_start']);
+                            $end   = date('d/m/Y', $info['max_end']);
+                            ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($lotName, ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo $start . ' → ' . $end; ?></td>
+                                <td>
+                                    <a
+                                        href="history_lot.php?lot=<?php echo urlencode($lotName); ?>"
+                                        class="save-btn"
+                                        title="Voir l'historique de ce lot"
+                                    >📈</a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        <?php endif; ?>
 
     <?php endif; // !empty($capteurs) ?>
 
@@ -1227,7 +1274,9 @@ function labelJour($n) {
                 </label>
 
                 <div class="settings-row">
-                    <label for="weekly_day">Jour d’envoi (mode hebdo) :</label>
+                    <label for="weekly_day">
+                        Jour d’envoi (mode hebdo) :
+                    </label>
                     <select name="weekly_day" id="weekly_day">
                         <?php
                         for ($d = 1; $d <= 7; $d++) {
@@ -1253,28 +1302,60 @@ function labelJour($n) {
             </fieldset>
 
             <fieldset>
-                <legend>Capteurs</legend>
-                <div class="settings-row">
-                    <label for="measure_interval_days">
-                        Fréquence de mesure attendue (jours) :
-                    </label>
-                    <input type="number"
-                           id="measure_interval_days"
-                           name="measure_interval_days"
-                           min="1"
-                           value="<?php echo (int)$notifConfig['measure_interval_days']; ?>">
-                </div>
+                <legend>Capteurs (global)</legend>
 
                 <div class="settings-row">
-                    <label for="offline_grace_days">
-                        Marge avant capteur "inactif" (jours) :
+                    <label for="measure_interval_days">
+                        Fréquence des mesures :
                     </label>
-                    <input type="number"
-                           id="offline_grace_days"
-                           name="offline_grace_days"
-                           min="0"
-                           value="<?php echo (int)$notifConfig['offline_grace_days']; ?>">
+
+                    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                        <!-- À gauche : intervalle en jours -->
+                        <div style="display:flex; align-items:center; gap:4px;">
+                            <input type="number"
+                                   id="measure_interval_days"
+                                   name="measure_interval_days"
+                                   min="1"
+                                   value="<?php echo (int)$barConfig['measure_interval_days']; ?>"
+                                   <?php echo !empty($barConfig['test_mode']) ? 'disabled' : ''; ?>>
+                            <span class="small">jours</span>
+                        </div>
+
+                        <!-- À droite : mode test -->
+                        <label style="display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox"
+                                   id="test_mode"
+                                   name="test_mode"
+                                   <?php echo !empty($barConfig['test_mode']) ? 'checked' : ''; ?>>
+                            <span class="small">Mode test (mesure toutes les 20&nbsp;s)</span>
+                        </label>
+                    </div>
+
+                    <div class="small" style="margin-top:4px;">
+                        <span title="Fréquence des mesures avec sommeil profond dans l'intervalle.
+Redémarrer le capteur pour forcer une nouvelle mesure ou prendre en compte une modification de ce paramètre.
+Ce paramètre sert également à détecter des capteurs en retard de mesure (inactifs).">
+                            ℹ️
+                        </span>
+                        &nbsp;Fréquence des mesures avec sommeil profond dans l'intervalle.
+                        Redémarrer le capteur pour une nouvelle mesure ou après modification de ce paramètre.
+                        Ce paramètre sert également à détecter des capteurs en retard de mesure (inactifs).
+                    </div>
                 </div>
+
+                <div class="settings-row" style="margin-top:0.8rem;">
+                    <label>
+                        <input type="checkbox"
+                               name="maintenance"
+                               <?php echo $barConfig['maintenance'] ? 'checked' : ''; ?>>
+                        Mode maintenance (désactive le deep-sleep pour tous les capteurs)
+                    </label>
+                    <div class="small">
+                        En maintenance : les capteurs restent éveillés (utile pour tests, flash, mise au point).
+                    </div>
+                </div>
+
+                <!-- Marge capteur inactif : fixée à offline_grace_days côté config, pas de champ ici -->
             </fieldset>
 
             <div class="settings-actions">
@@ -1357,7 +1438,18 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-// Bloc "Historique des anciens lots" repliable
+    // Mode test : griser / désactiver le champ jours
+    const testModeCheckbox = document.getElementById("test_mode");
+    const measureDaysInput = document.getElementById("measure_interval_days");
+    if (testModeCheckbox && measureDaysInput) {
+        const syncDisabled = () => {
+            measureDaysInput.disabled = testModeCheckbox.checked;
+        };
+        syncDisabled();
+        testModeCheckbox.addEventListener("change", syncDisabled);
+    }
+
+    // Bloc "Historique des anciens lots" repliable
     const archivesHeader = document.getElementById("toggle-archives");
     const archivesBody   = document.getElementById("archives-body");
     const archivesIcon   = document.getElementById("archives-toggle-icon");
@@ -1370,7 +1462,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 });
-
 </script>
 
 </body>
