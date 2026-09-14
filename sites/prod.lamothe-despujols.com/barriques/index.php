@@ -4,71 +4,32 @@ require __DIR__ . '/barriques_lib.php';
 /* =========================================================
    1) CONFIG LOTS (par capteur)
    ========================================================= */
-$configLotsFile = __DIR__ . '/config_lots.json';
-$configLots = [];
-
-if (file_exists($configLotsFile)) {
-    $json = file_get_contents($configLotsFile);
-    $data = json_decode($json, true);
-    if (is_array($data)) {
-        $configLots = $data; // id => ['lot'=>..., 'barriques'=>...]
-    }
-}
+$configLots = loadLotsConfig(); // id => ['lot'=>..., 'barriques'=>...]
 
 /* =========================================================
    2) CONFIG NOTIFICATIONS (dashboard / alertes)
    ========================================================= */
-$notifConfigFile = __DIR__ . '/notifications_config.json';
+$notifMode = getSetting('notif_mode', 'weekly');
+if (!in_array($notifMode, ['off', 'daily', 'weekly'], true)) $notifMode = 'weekly';
+
+$notifWeeklyDay = (int)getSetting('notif_weekly_day', '2');
+if ($notifWeeklyDay < 1 || $notifWeeklyDay > 7) $notifWeeklyDay = 2;
+
 $notifConfig = [
-    'mode'                  => 'weekly',
-    'include_battery'       => true,
-    'include_offline'       => true,
-    'weekly_day'            => 2,
-    'measure_interval_days' => 7,
-    'offline_grace_days'    => 1,
+    'mode'                  => $notifMode,
+    'include_battery'       => getSetting('notif_include_battery', '1') === '1',
+    'include_offline'       => getSetting('notif_include_offline', '1') === '1',
+    'weekly_day'            => $notifWeeklyDay,
+    'measure_interval_days' => max(1, (int)getSetting('notif_measure_interval_days', '7')),
+    'offline_grace_days'    => max(0, (int)getSetting('notif_offline_grace_days', '1')),
 ];
-
-if (file_exists($notifConfigFile)) {
-    $jsonNotif = file_get_contents($notifConfigFile);
-    $dataNotif = json_decode($jsonNotif, true);
-    if (is_array($dataNotif)) {
-        $mode = $dataNotif['mode'] ?? 'weekly';
-        if (!in_array($mode, ['off','daily','weekly'], true)) $mode = 'weekly';
-
-        $notifConfig['mode']            = $mode;
-        $notifConfig['include_battery'] = !empty($dataNotif['include_battery']);
-        $notifConfig['include_offline'] = !empty($dataNotif['include_offline']);
-
-        if (isset($dataNotif['weekly_day'])) {
-            $wd = (int)$dataNotif['weekly_day'];
-            if ($wd >= 1 && $wd <= 7) $notifConfig['weekly_day'] = $wd;
-        }
-        if (isset($dataNotif['measure_interval_days'])) {
-            $notifConfig['measure_interval_days'] = max(1, (int)$dataNotif['measure_interval_days']);
-        }
-        if (isset($dataNotif['offline_grace_days'])) {
-            $notifConfig['offline_grace_days'] = max(0, (int)$dataNotif['offline_grace_days']);
-        }
-    }
-}
 
 /* =========================================================
    2bis) CONFIG GLOBALE CAPTEURS (FIRMWARE)
    ========================================================= */
-$barConfigFile = __DIR__ . '/config.json';
 $barConfig = [
-    'measure_interval_s'       => 604800, // 7 jours
-    'measure_interval_days'    => 7,
-    'measure_interval_minutes' => 0,
+    'measure_interval_s' => max(60, (int)getSetting('measure_interval_s', '604800')),
 ];
-
-if (file_exists($barConfigFile)) {
-    $jsonBar = file_get_contents($barConfigFile);
-    $dataBar = json_decode($jsonBar, true);
-    if (is_array($dataBar)) {
-        if (isset($dataBar['measure_interval_s'])) $barConfig['measure_interval_s'] = max(60, (int)$dataBar['measure_interval_s']);
-    }
-}
 $barConfig['measure_interval_days']    = intdiv((int)$barConfig['measure_interval_s'], 86400);
 $barConfig['measure_interval_minutes'] = intdiv((int)$barConfig['measure_interval_s'] % 86400, 60);
 
@@ -103,19 +64,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lotPost = trim((string)($_POST['lot'][$id] ?? ''));
 
                 if ($lotPost === '') {
-                    unset($configLots[$id]);
                     $newLot = '';
                     $newBar = 0;
                 } else {
-                    $configLots[$id] = [
-                        'lot'       => $lotPost,
-                        'barriques' => $oldBar, // on conserve la valeur existante
-                    ];
                     $newLot = $lotPost;
-                    $newBar = $oldBar;
+                    $newBar = $oldBar; // on conserve la valeur existante
                 }
 
-                file_put_contents($configLotsFile, json_encode($configLots, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                saveSensorLot($id, $newLot, $newBar);
 
                 // Historique : figer barriques sur segment fermé + écrire barriques sur segment ouvert
                 updateLotHistoryOnLotChange($id, $oldLot, $newLot, null, $oldBar, $newBar);
@@ -146,13 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $barriquesPost = trim((string)($_POST['lot_barriques'][$lotKey] ?? ''));
         $barVal = ($barriquesPost === '') ? 0 : max(0, (int)$barriquesPost);
 
-        foreach ($configLots as $sid => $cfg) {
-            if (($cfg['lot'] ?? '') === $lotKey) {
-                $configLots[$sid]['barriques'] = $barVal;
-            }
-        }
-
-        file_put_contents($configLotsFile, json_encode($configLots, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        setLotBarriques($lotKey, $barVal);
 
         header('Location: index.php');
         exit;
@@ -276,13 +226,11 @@ foreach ($historyById as &$arr) {
 }
 unset($arr);
 
-// Périodes de lots via lot_history.json
-$lotHistoryFile = __DIR__ . '/lot_history.json';
+// Périodes de lots (table lot_history)
 $lotPeriods = []; // [id][lot] => [ {from_ts,to_ts,barriques?}, ... ]
 
-if (file_exists($lotHistoryFile)) {
-    $jsonH = file_get_contents($lotHistoryFile);
-    $hist  = json_decode($jsonH, true);
+{
+    $hist = loadLotHistory();
 
     if (is_array($hist)) {
         $isAssoc = array_keys($hist) !== range(0, count($hist) - 1);
@@ -447,9 +395,8 @@ if (!empty($lotPeriods)) {
     }
 }
 
-if (file_exists($lotHistoryFile)) {
-    $jsonH = file_get_contents($lotHistoryFile);
-    $hist  = json_decode($jsonH, true);
+{
+    $hist = loadLotHistory();
 
     if (is_array($hist)) {
         $hasOpenByLot = []; // lot => true si une période ouverte existe

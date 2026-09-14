@@ -3,32 +3,92 @@
         {
             "lot": "SE16",
             "from_ts": 1765243906,
-            "to_ts": 1765243977
+            "to_ts": 1765243977,
+            "barriques": 0
         },
         {
             "lot": "L16",
             "from_ts": 1765243978,
-            "to_ts": 1765244344
+            "to_ts": 1765244344,
+            "barriques": 0
         },
         {
             "lot": "L17",
             "from_ts": 1765244345,
-            "to_ts": 1765244367
+            "to_ts": 1765244367,
+            "barriques": 0
         },
         {
             "lot": "L24",
             "from_ts": 1765244368,
-            "to_ts": 1765244623
+            "to_ts": 1765244623,
+            "barriques": 0
         },
         {
             "lot": "L14",
             "from_ts": 1765244624,
-            "to_ts": 1765244887
+            "to_ts": 1765244887,
+            "barriques": 0
         },
         {
             "lot": "L13",
             "from_ts": 1765244888,
-            "to_ts": null
+            "to_ts": 1766271752,
+            "barriques": 0
+        },
+        {
+            "lot": "L12",
+            "from_ts": 1766271753,
+            "to_ts": 1766274976,
+            "barriques": 0
+        },
+        {
+            "lot": "L11",
+            "from_ts": 1766274977,
+            "to_ts": 1766276102,
+            "barriques": 0
+        },
+        {
+            "lot": "L10",
+            "from_ts": 1766276103,
+            "to_ts": 1766286812,
+            "barriques": 0
+        },
+        {
+            "lot": "L09",
+            "from_ts": 1766286813,
+            "to_ts": 1766325621,
+            "barriques": 4
+        },
+        {
+            "lot": "L08",
+            "from_ts": 1766325622,
+            "to_ts": 1767716257,
+            "barriques": 4
+        }
+    ],
+    "410294044": [
+        {
+            "lot": "L24",
+            "from_ts": 1767714736,
+            "to_ts": null,
+            "barriques": 0
+        }
+    ],
+    "161831196": [
+        {
+            "lot": "SE24",
+            "from_ts": 1767715392,
+            "to_ts": null,
+            "barriques": 0
+        }
+    ],
+    "532155676": [
+        {
+            "lot": "L23",
+            "from_ts": 1767716057,
+            "to_ts": null,
+            "barriques": 0
         }
     ]
 }

@@ -4,24 +4,16 @@
 /* =========================================================
    PATHS
    ========================================================= */
-function creuxOffsetsFilePath(): string {
-    return __DIR__ . '/offsets_creux.json';
-}
-
-function lotHistoryFilePath(): string {
-    return __DIR__ . '/lot_history.json';
-}
-
 function barriquesDbPath(): string {
     return __DIR__ . '/barriques.sqlite';
 }
 
 /* =========================================================
-   SQLITE (mesures)
-   - Phase 1 de la migration DB (voir audit sept. 2026) : seules les
-     mesures (ex logs/barriques.log) passent en SQLite. Les fichiers
-     de config (lots, offsets, notifs, abonnements push) restent en
-     JSON pour l'instant.
+   SQLITE
+   - Phase 1 (sept. 2026) : mesures (ex logs/barriques.log).
+   - Phase 2 (sept. 2026) : config lots, offsets, historique des
+     lots, reglages (config.json + notifications_config.json),
+     abonnements push. Voir audit CSV/JSON vs SQLite vs Supabase.
    ========================================================= */
 function dbConnect(): PDO {
     static $pdo = null;
@@ -40,8 +32,148 @@ function dbConnect(): PDO {
             ts INTEGER NOT NULL
         )');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mesures_sensor_ts ON mesures(sensor_id, ts)');
+
+        $pdo->exec('CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )');
+
+        $pdo->exec('CREATE TABLE IF NOT EXISTS offsets_creux (
+            sensor_id TEXT PRIMARY KEY,
+            offset_cm REAL NOT NULL DEFAULT 0
+        )');
+
+        $pdo->exec('CREATE TABLE IF NOT EXISTS lots_config (
+            sensor_id TEXT PRIMARY KEY,
+            lot TEXT NOT NULL,
+            barriques INTEGER NOT NULL DEFAULT 0
+        )');
+
+        $pdo->exec('CREATE TABLE IF NOT EXISTS lot_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sensor_id TEXT NOT NULL,
+            lot TEXT NOT NULL,
+            from_ts INTEGER NOT NULL,
+            to_ts INTEGER,
+            barriques INTEGER NOT NULL DEFAULT 0
+        )');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_lot_history_sensor ON lot_history(sensor_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_lot_history_lot ON lot_history(lot)');
+
+        $pdo->exec('CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            endpoint TEXT NOT NULL UNIQUE,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            expiration_time INTEGER
+        )');
     }
     return $pdo;
+}
+
+/* =========================================================
+   REGLAGES (cle/valeur) - remplace config.json + notifications_config.json
+   ========================================================= */
+function getSetting(string $key, string $default = ''): string {
+    $pdo = dbConnect();
+    $stmt = $pdo->prepare('SELECT value FROM settings WHERE key = ?');
+    $stmt->execute([$key]);
+    $v = $stmt->fetchColumn();
+    return ($v === false) ? $default : (string)$v;
+}
+
+function setSetting(string $key, string $value): void {
+    $pdo = dbConnect();
+    $stmt = $pdo->prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    );
+    $stmt->execute([$key, $value]);
+}
+
+/* =========================================================
+   CONFIG LOTS (par capteur) - remplace config_lots.json
+   ========================================================= */
+function loadLotsConfig(): array {
+    $pdo = dbConnect();
+    $rows = $pdo->query('SELECT sensor_id, lot, barriques FROM lots_config')->fetchAll(PDO::FETCH_ASSOC);
+    $out = [];
+    foreach ($rows as $r) {
+        $out[$r['sensor_id']] = [
+            'lot'       => $r['lot'],
+            'barriques' => (int)$r['barriques'],
+        ];
+    }
+    return $out;
+}
+
+/**
+ * Definit (ou retire si $lot === '') le lot/barriques d'un capteur.
+ */
+function saveSensorLot(string $sensorId, string $lot, int $barriques): void {
+    $pdo = dbConnect();
+    if ($lot === '') {
+        $stmt = $pdo->prepare('DELETE FROM lots_config WHERE sensor_id = ?');
+        $stmt->execute([$sensorId]);
+        return;
+    }
+    $stmt = $pdo->prepare(
+        'INSERT INTO lots_config (sensor_id, lot, barriques) VALUES (?, ?, ?)
+         ON CONFLICT(sensor_id) DO UPDATE SET lot = excluded.lot, barriques = excluded.barriques'
+    );
+    $stmt->execute([$sensorId, $lot, $barriques]);
+}
+
+/**
+ * Met a jour le nombre de barriques pour tous les capteurs d'un lot donne.
+ */
+function setLotBarriques(string $lot, int $barriques): void {
+    $pdo = dbConnect();
+    $stmt = $pdo->prepare('UPDATE lots_config SET barriques = ? WHERE lot = ?');
+    $stmt->execute([$barriques, $lot]);
+}
+
+/* =========================================================
+   ABONNEMENTS PUSH - remplace subscriptions.json
+   ========================================================= */
+function loadPushSubscriptions(): array {
+    $pdo = dbConnect();
+    $rows = $pdo->query('SELECT endpoint, p256dh, auth, expiration_time FROM push_subscriptions')->fetchAll(PDO::FETCH_ASSOC);
+    $out = [];
+    foreach ($rows as $r) {
+        $out[] = [
+            'endpoint'       => $r['endpoint'],
+            'expirationTime' => $r['expiration_time'],
+            'keys'           => [
+                'p256dh' => $r['p256dh'],
+                'auth'   => $r['auth'],
+            ],
+        ];
+    }
+    return $out;
+}
+
+/**
+ * Ajoute un abonnement s'il n'existe pas deja (meme endpoint).
+ */
+function addPushSubscriptionIfNew(array $sub): void {
+    $endpoint = (string)($sub['endpoint'] ?? '');
+    if ($endpoint === '') return;
+
+    $pdo = dbConnect();
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM push_subscriptions WHERE endpoint = ?');
+    $stmt->execute([$endpoint]);
+    if ((int)$stmt->fetchColumn() > 0) return;
+
+    $p256dh = (string)($sub['keys']['p256dh'] ?? '');
+    $auth   = (string)($sub['keys']['auth'] ?? '');
+    $expiry = array_key_exists('expirationTime', $sub) && $sub['expirationTime'] !== null
+        ? (int)$sub['expirationTime']
+        : null;
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO push_subscriptions (endpoint, p256dh, auth, expiration_time) VALUES (?, ?, ?, ?)'
+    );
+    $stmt->execute([$endpoint, $p256dh, $auth, $expiry]);
 }
 
 function insertMeasurement(string $sensorId, string $dateIso, int $raw, ?int $batteryMv, ?int $rssi, ?string $fw, int $ts): void {
@@ -68,20 +200,33 @@ function getAllMeasurementRows(): array {
 
 /* =========================================================
    OFFSETS CREUX
-   - offsets_creux.json : { "330989340": 0.7, "330989341": -0.3, ... }
+   - table offsets_creux : sensor_id => offset_cm
    - offset en cm, appliqué sur creux_cm et dérivé en litres
    ========================================================= */
 function loadCreuxOffsets(): array {
-    $file = creuxOffsetsFilePath();
-    if (!file_exists($file)) return [];
-    $json = file_get_contents($file);
-    $data = json_decode($json, true);
-    return is_array($data) ? $data : [];
+    $pdo = dbConnect();
+    $rows = $pdo->query('SELECT sensor_id, offset_cm FROM offsets_creux')->fetchAll(PDO::FETCH_ASSOC);
+    $out = [];
+    foreach ($rows as $r) {
+        $out[$r['sensor_id']] = (float)$r['offset_cm'];
+    }
+    return $out;
 }
 
+/**
+ * Remplace entierement les offsets par le tableau donne (meme
+ * comportement que l'ancien fichier JSON, ecrase tout a chaque appel).
+ */
 function saveCreuxOffsets(array $offsets): void {
-    $file = creuxOffsetsFilePath();
-    file_put_contents($file, json_encode($offsets, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    $pdo = dbConnect();
+    $pdo->beginTransaction();
+    $pdo->exec('DELETE FROM offsets_creux');
+    $stmt = $pdo->prepare('INSERT INTO offsets_creux (sensor_id, offset_cm) VALUES (?, ?)');
+    foreach ($offsets as $sensorId => $offset) {
+        if (!is_numeric($offset)) continue;
+        $stmt->execute([(string)$sensorId, (float)$offset]);
+    }
+    $pdo->commit();
 }
 
 function getCreuxOffsetForSensor(string $sensorId): float {
@@ -213,21 +358,62 @@ function interpret_raw(int $raw, float $offsetCm = 0.0): array {
 
 /* =========================================================
    LOT HISTORY
-   Compatibilité :
-   - Format A : { "id": [ {lot, from_ts, to_ts, barriques?}, ... ] }
-   - Format "plat" (sécurité) : [ {id, lot, from_ts/start_ts, to_ts/end_ts, barriques?}, ... ]
+   - table lot_history : sensor_id, lot, from_ts, to_ts (NULL=ouvert), barriques
+   - loadLotHistory() reconstruit le format assoc historique :
+     { "id": [ {lot, from_ts, to_ts, barriques}, ... ] }
+     pour que normalizeLotHistory() et le reste du fichier n'aient
+     rien a changer.
    ========================================================= */
 function loadLotHistory(): array {
-    $file = lotHistoryFilePath();
-    if (!file_exists($file)) return [];
-    $json = file_get_contents($file);
-    $data = json_decode($json, true);
-    return is_array($data) ? $data : [];
+    $pdo = dbConnect();
+    $rows = $pdo->query(
+        'SELECT sensor_id, lot, from_ts, to_ts, barriques FROM lot_history ORDER BY sensor_id, from_ts'
+    )->fetchAll(PDO::FETCH_ASSOC);
+
+    $out = [];
+    foreach ($rows as $r) {
+        $sid = (string)$r['sensor_id'];
+        $out[$sid] ??= [];
+        $out[$sid][] = [
+            'lot'       => $r['lot'],
+            'from_ts'   => (int)$r['from_ts'],
+            'to_ts'     => ($r['to_ts'] === null) ? null : (int)$r['to_ts'],
+            'barriques' => (int)$r['barriques'],
+        ];
+    }
+    return $out;
 }
 
+/**
+ * Remplace entierement l'historique par le tableau donne (meme
+ * comportement que l'ancien fichier JSON, ecrase tout a chaque appel).
+ * Attend le format assoc : [sensorId => [ {lot, from_ts, to_ts, barriques}, ... ]]
+ */
 function saveLotHistory(array $history): void {
-    $file = lotHistoryFilePath();
-    file_put_contents($file, json_encode($history, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    $pdo = dbConnect();
+    $pdo->beginTransaction();
+    $pdo->exec('DELETE FROM lot_history');
+    $stmt = $pdo->prepare(
+        'INSERT INTO lot_history (sensor_id, lot, from_ts, to_ts, barriques) VALUES (?, ?, ?, ?, ?)'
+    );
+    foreach ($history as $sensorId => $periods) {
+        if (!is_array($periods)) continue;
+        foreach ($periods as $p) {
+            if (!is_array($p)) continue;
+            $fromTs = (int)($p['from_ts'] ?? 0);
+            if ($fromTs <= 0) continue;
+            $toTs = (array_key_exists('to_ts', $p) && $p['to_ts'] !== null) ? (int)$p['to_ts'] : null;
+
+            $stmt->execute([
+                (string)$sensorId,
+                (string)($p['lot'] ?? ''),
+                $fromTs,
+                $toTs,
+                (int)($p['barriques'] ?? 0),
+            ]);
+        }
+    }
+    $pdo->commit();
 }
 
 /**
@@ -428,13 +614,4 @@ function updateLotHistoryOnLotChange(
 
     $history[$sensorId] = $segments;
     saveLotHistory($history);
-}
-
-/* =========================================================
-   LOG READER (optionnel mais pratique)
-   ========================================================= */
-function read_barriques_log_records(string $logFile): array {
-    if (!file_exists($logFile)) return [];
-    $lines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    return is_array($lines) ? $lines : [];
 }

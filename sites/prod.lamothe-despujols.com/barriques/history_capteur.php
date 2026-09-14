@@ -1,15 +1,12 @@
 <?php
 // history_capteur.php
 // Historique d’un capteur : bande min/max + courbe moyenne
-// + fond coloré selon le lot (lot_history.json)
+// + fond coloré selon le lot (historique des lots)
 // + décimation (Chart.js) pour garder un graphe propre
 // + plage de dates automatique (toutes les données disponibles)
 // + axe Y dynamique (s’adapte aux valeurs)
 
 require __DIR__ . '/barriques_lib.php';
-
-$configLotsFile = __DIR__ . '/config_lots.json';
-$lotHistoryFile = __DIR__ . '/lot_history.json';
 
 /* ===============================
    0) ID capteur
@@ -27,26 +24,19 @@ if ($id === '') {
 $offset = getCreuxOffsetForSensor((string)$id);
 
 /* ===============================
-   2) config_lots (optionnel, juste pour afficher le lot courant si besoin)
+   2) config lots (optionnel, juste pour afficher le lot courant si besoin)
    =============================== */
-$configLots = [];
-if (file_exists($configLotsFile)) {
-    $tmp = json_decode((string)file_get_contents($configLotsFile), true);
-    if (is_array($tmp)) $configLots = $tmp;
-}
+$configLots = loadLotsConfig();
 $lotCourant = '';
 if (isset($configLots[$id]['lot'])) $lotCourant = trim((string)$configLots[$id]['lot']);
 
 /* ===============================
-   3) Historique des lots pour CE capteur (lot_history.json)
-   Format attendu (assoc) : hist[id] = [ {lot, from_ts, to_ts, barriques?}, ... ]
+   3) Historique des lots pour CE capteur
    =============================== */
 $periods = [];
-if (file_exists($lotHistoryFile)) {
-    $hist = json_decode((string)file_get_contents($lotHistoryFile), true);
-    if (is_array($hist) && isset($hist[$id]) && is_array($hist[$id])) {
-        $periods = $hist[$id];
-    }
+$hist = loadLotHistory();
+if (isset($hist[$id]) && is_array($hist[$id])) {
+    $periods = $hist[$id];
 }
 
 // Normaliser/trier les périodes et sécuriser (end null => ouverte)
@@ -241,7 +231,7 @@ $lotEsc = htmlspecialchars($lotCourant, ENT_QUOTES, 'UTF-8');
             <?php endif; ?>
         </h1>
         <div class="sub">
-            Bande min/max (L) + courbe moyenne. Fond coloré quand le lot change (lot_history.json).
+            Bande min/max (L) + courbe moyenne. Fond coloré quand le lot change (historique des lots).
             <br>Décimation activée pour garder un graphe lisible même sur plusieurs années.
         </div>
     </div>
@@ -251,7 +241,7 @@ $lotEsc = htmlspecialchars($lotCourant, ENT_QUOTES, 'UTF-8');
             <canvas id="chart"></canvas>
         </div>
         <div class="hint">
-            Astuce : survol = valeurs exactes. Si le fond ne change pas, c’est que <code>lot_history.json</code> n’a pas de périodes pour ce capteur.
+            Astuce : survol = valeurs exactes. Si le fond ne change pas, c’est qu’il n’y a pas de période enregistrée pour ce capteur.
         </div>
     </div>
 </div>

@@ -8,58 +8,25 @@ require __DIR__ . '/../vendor/autoload.php'; // Minishlink/WebPush
 use Minishlink\WebPush\WebPush;
 use Minishlink\WebPush\Subscription;
 
-// ---------- FICHIERS ----------
-$configLotsFile    = __DIR__ . '/config_lots.json';
-$notifConfigFile   = __DIR__ . '/notifications_config.json';
-$subscriptionsFile = __DIR__ . '/subscriptions.json';
-
 // ---------- 1. LIRE CONFIG NOTIFS ----------
+$notifMode = getSetting('notif_mode', 'weekly');
+if (!in_array($notifMode, ['off', 'daily', 'weekly'], true)) $notifMode = 'weekly';
+
+$notifWeeklyDay = (int)getSetting('notif_weekly_day', '2');
+if ($notifWeeklyDay < 1 || $notifWeeklyDay > 7) $notifWeeklyDay = 2;
+
 $notifConfig = [
-    'mode'                 => 'weekly',   // off | daily | weekly (logique "fonctionnelle")
-    'include_battery'      => true,
-    'include_offline'      => true,
-    'weekly_day'           => 2,          // 1 = lundi ... 7 = dimanche
-    'measure_interval_days'=> 7,          // fréquence attendue des mesures (en jours)
-    'offline_grace_days'   => 1,          // marge de sécurité (en jours)
+    'mode'                  => $notifMode,
+    'include_battery'       => getSetting('notif_include_battery', '1') === '1',
+    'include_offline'       => getSetting('notif_include_offline', '1') === '1',
+    'weekly_day'            => $notifWeeklyDay,
+    'measure_interval_days' => max(1, (int)getSetting('notif_measure_interval_days', '7')),
+    'offline_grace_days'    => max(0, (int)getSetting('notif_offline_grace_days', '1')),
 ];
-
-if (file_exists($notifConfigFile)) {
-    $data = json_decode(file_get_contents($notifConfigFile), true);
-    if (is_array($data)) {
-        // mode
-        $mode = $data['mode'] ?? 'weekly';
-        if (!in_array($mode, ['off', 'daily', 'weekly'], true)) {
-            $mode = 'weekly';
-        }
-        $notifConfig['mode'] = $mode;
-
-        // sections optionnelles
-        $notifConfig['include_battery'] = !empty($data['include_battery']);
-        $notifConfig['include_offline'] = !empty($data['include_offline']);
-
-        // jour hebdo
-        if (isset($data['weekly_day'])) {
-            $wd = (int)$data['weekly_day'];
-            if ($wd >= 1 && $wd <= 7) {
-                $notifConfig['weekly_day'] = $wd;
-            }
-        }
-
-        // fréquence de mesure en jours
-        if (isset($data['measure_interval_days'])) {
-            $notifConfig['measure_interval_days'] = max(1, (int)$data['measure_interval_days']);
-        }
-
-        // marge de sécurité en jours
-        if (isset($data['offline_grace_days'])) {
-            $notifConfig['offline_grace_days'] = max(0, (int)$data['offline_grace_days']);
-        }
-    }
-}
 
 // Si notifications désactivées → on sort
 if ($notifConfig['mode'] === 'off') {
-    echo "[INFO] Notifications désactivées (mode = off dans notifications_config.json)\n";
+    echo "[INFO] Notifications désactivées (mode = off)\n";
     exit(0);
 }
 
@@ -78,31 +45,7 @@ if ($notifConfig['mode'] === 'weekly') {
 }
 
 // ---------- 2. CHARGER CONFIG LOTS ----------
-$configById = [];
-
-if (!file_exists($configLotsFile)) {
-    echo "[WARN] Fichier de config lots introuvable : $configLotsFile\n";
-} else {
-    $cfgJson = file_get_contents($configLotsFile);
-    $rawCfg  = json_decode($cfgJson, true);
-    if ($rawCfg === null) {
-        echo "[WARN] Erreur JSON dans config_lots.json : " . json_last_error_msg() . "\n";
-    } else {
-        // Format attendu :
-        // {
-        //   "330989340": { "lot": "L24", "barriques": 10 },
-        //   "123456789": { "lot": "L25", "barriques": 8 }
-        // }
-        foreach ($rawCfg as $idKey => $v) {
-            if (!is_array($v)) continue;
-            $idStr = (string)$idKey;
-            $configById[$idStr] = [
-                'lot'       => $v['lot']       ?? '',
-                'barriques' => isset($v['barriques']) ? (int)$v['barriques'] : 1,
-            ];
-        }
-    }
-}
+$configById = loadLotsConfig(); // id => ['lot'=>..., 'barriques'=>...]
 
 // ---------- 3. LIRE DERNIÈRES MESURES PAR CAPTEUR (SQLite, phase 1 migration) ----------
 $measurementRows = getAllMeasurementRows();
@@ -290,15 +233,9 @@ $body = implode("\n", $lines);
 
 // ---------- 6. ENVOI WEB PUSH ----------
 
-if (!file_exists($subscriptionsFile)) {
-    echo "[WARN] Aucun subscriptions.json trouvé, personne à notifier.\n";
-    exit(0);
-}
-
-$subsJson = file_get_contents($subscriptionsFile);
-$subsData = json_decode($subsJson, true);
-if (empty($subsData) || !is_array($subsData)) {
-    echo "[WARN] subscriptions.json vide ou invalide.\n";
+$subsData = loadPushSubscriptions();
+if (empty($subsData)) {
+    echo "[WARN] Aucun abonnement push, personne à notifier.\n";
     exit(0);
 }
 

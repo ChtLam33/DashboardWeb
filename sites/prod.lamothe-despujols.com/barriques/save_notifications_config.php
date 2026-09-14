@@ -1,9 +1,8 @@
 <?php
 // save_notifications_config.php
-// Met à jour notifications_config.json ET config.json (capteurs)
+// Met à jour les réglages notifications + capteurs (table SQLite "settings")
 
-$notifFile    = __DIR__ . '/notifications_config.json';
-$barConfigFile = __DIR__ . '/config.json';
+require __DIR__ . '/barriques_lib.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -12,7 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 /* =========================================================
-   1) Notifications (notifications_config.json)
+   1) Notifications
    ========================================================= */
 
 // Valeurs autorisées pour le mode
@@ -45,23 +44,15 @@ if ($measureIntervalDays < 0) {
 // -> on la fixe désormais à 1 jour, pas de champ dans l'UI
 $offlineGraceDays = 1;
 
-$notifConfig = [
-    'mode'                  => $mode,
-    'include_battery'       => $includeBattery,
-    'include_offline'       => $includeOffline,
-    'weekly_day'            => $weeklyDay,
-    'measure_interval_days' => $measureIntervalDays,
-    'offline_grace_days'    => $offlineGraceDays,
-];
-
-// Sauvegarde JSON "joli"
-file_put_contents(
-    $notifFile,
-    json_encode($notifConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-);
+setSetting('notif_mode', $mode);
+setSetting('notif_include_battery', $includeBattery ? '1' : '0');
+setSetting('notif_include_offline', $includeOffline ? '1' : '0');
+setSetting('notif_weekly_day', (string)$weeklyDay);
+setSetting('notif_measure_interval_days', (string)$measureIntervalDays);
+setSetting('notif_offline_grace_days', (string)$offlineGraceDays);
 
 /* =========================================================
-   2) Config globale capteurs (config.json)
+   2) Config globale capteurs
    ========================================================= */
 
 // Minutes complémentaires aux jours (0 à 1439, soit moins de 24h)
@@ -75,18 +66,9 @@ if ($measureIntervalMinutes > 1439) $measureIntervalMinutes = 1439;
 // (plancher de securite 60s, le firmware applique aussi son propre plancher)
 $measureIntervalS = max(60, $measureIntervalDays * 86400 + $measureIntervalMinutes * 60);
 
-// Config capteurs (remplace entièrement config.json)
-$barConfig = [
-    'measure_interval_s'       => $measureIntervalS,
-    'measure_interval_days'    => $measureIntervalDays,
-    'measure_interval_minutes' => $measureIntervalMinutes,
-];
-
-// Sauvegarde config.json
-file_put_contents(
-    $barConfigFile,
-    json_encode($barConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-);
+setSetting('measure_interval_s', (string)$measureIntervalS);
+setSetting('measure_interval_days', (string)$measureIntervalDays);
+setSetting('measure_interval_minutes', (string)$measureIntervalMinutes);
 
 // Redirection simple vers le dashboard barriques
 header('Location: ./');

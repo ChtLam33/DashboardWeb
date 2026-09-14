@@ -1,8 +1,8 @@
 <?php
 // history_lot.php
 // Graphique d’historique par lot (creux en L, bande min/max)
-// - Respecte STRICTEMENT les périodes du lot via lot_history.json (IMPORTANT pour archives)
-// - Applique les offsets par capteur (offsets_creux.json)
+// - Respecte STRICTEMENT les périodes du lot via l'historique (table lot_history, IMPORTANT pour archives)
+// - Applique les offsets par capteur (table offsets_creux)
 // - Axe X plus lisible (rotation + format "intelligent" selon durée)
 
 require __DIR__ . '/barriques_lib.php';
@@ -13,10 +13,6 @@ if ($lot === '') {
     echo "Lot manquant.";
     exit;
 }
-
-// ---------- 1) Fichiers ----------
-$configLotsFile = __DIR__ . '/config_lots.json';
-$lotHistoryFile = __DIR__ . '/lot_history.json';
 
 // ---------- 2) Mesures (SQLite, phase 1 migration) ----------
 $rows = [];
@@ -44,74 +40,32 @@ if (empty($rows)) {
     exit;
 }
 
-// ---------- 3) config_lots (fallback si pas d'historique) ----------
-$configLots = [];
-if (file_exists($configLotsFile)) {
-    $json = file_get_contents($configLotsFile);
-    $data = json_decode($json, true);
-    if (is_array($data)) {
-        $configLots = $data; // id => ['lot'=>..., 'barriques'=>...]
-    }
-}
+// ---------- 3) config lots (fallback si pas d'historique) ----------
+$configLots = loadLotsConfig(); // id => ['lot'=>..., 'barriques'=>...]
 
-// ---------- 4) Périodes lot_history.json (STRICT) ----------
+// ---------- 4) Périodes de lots (STRICT) ----------
 // On construit : $periodsById[id] = [ ['start'=>ts, 'end'=>ts|null], ... ] pour CE lot uniquement
 $periodsById = [];
 
-if (file_exists($lotHistoryFile)) {
-    $jsonH = file_get_contents($lotHistoryFile);
-    $hist  = json_decode($jsonH, true);
+$hist = loadLotHistory(); // format assoc : id => [ {lot, from_ts, to_ts, barriques}, ... ]
+foreach ($hist as $sensorId => $periods) {
+    if (!is_array($periods)) continue;
+    $eId = trim((string)$sensorId);
+    if ($eId === '') continue;
 
-    if (is_array($hist)) {
-        // Format B (plat) si index 0 existe
-        if (array_key_exists(0, $hist) && is_array($hist[0])) {
-            foreach ($hist as $entry) {
-                if (!is_array($entry)) continue;
+    foreach ($periods as $p) {
+        if (!is_array($p)) continue;
 
-                $eLot = isset($entry['lot']) ? trim((string)$entry['lot']) : '';
-                $eId  = isset($entry['id'])  ? trim((string)$entry['id'])  : '';
-                if ($eLot === '' || $eId === '') continue;
-                if ($eLot !== $lot) continue;
+        $eLot = isset($p['lot']) ? trim((string)$p['lot']) : '';
+        if ($eLot === '' || $eLot !== $lot) continue;
 
-                $sTs = 0;
-                if (isset($entry['start_ts'])) $sTs = (int)$entry['start_ts'];
-                elseif (isset($entry['from_ts'])) $sTs = (int)$entry['from_ts'];
+        $sTs = (int)($p['from_ts'] ?? 0);
+        $eTs = array_key_exists('to_ts', $p) && $p['to_ts'] !== null ? (int)$p['to_ts'] : null;
 
-                $endRaw = $entry['end_ts'] ?? ($entry['to_ts'] ?? null);
-                $eTs    = ($endRaw === null) ? null : (int)$endRaw;
+        if ($sTs <= 0) continue;
 
-                if ($sTs <= 0) continue;
-
-                if (!isset($periodsById[$eId])) $periodsById[$eId] = [];
-                $periodsById[$eId][] = ['start' => $sTs, 'end' => $eTs];
-            }
-        } else {
-            // Format A (assoc) : id => [ {lot, from_ts, to_ts}, ... ]
-            foreach ($hist as $sensorId => $periods) {
-                if (!is_array($periods)) continue;
-                $eId = trim((string)$sensorId);
-                if ($eId === '') continue;
-
-                foreach ($periods as $p) {
-                    if (!is_array($p)) continue;
-
-                    $eLot = isset($p['lot']) ? trim((string)$p['lot']) : '';
-                    if ($eLot === '' || $eLot !== $lot) continue;
-
-                    $sTs = 0;
-                    if (isset($p['from_ts'])) $sTs = (int)$p['from_ts'];
-                    elseif (isset($p['start_ts'])) $sTs = (int)$p['start_ts'];
-
-                    $endRaw = $p['to_ts'] ?? ($p['end_ts'] ?? null);
-                    $eTs    = ($endRaw === null) ? null : (int)$endRaw;
-
-                    if ($sTs <= 0) continue;
-
-                    if (!isset($periodsById[$eId])) $periodsById[$eId] = [];
-                    $periodsById[$eId][] = ['start' => $sTs, 'end' => $eTs];
-                }
-            }
-        }
+        if (!isset($periodsById[$eId])) $periodsById[$eId] = [];
+        $periodsById[$eId][] = ['start' => $sTs, 'end' => $eTs];
     }
 }
 
@@ -215,9 +169,9 @@ if (empty($dataPoints)) {
     <h1>Historique lot <?php echo $lotEsc; ?></h1>
     <p>Aucune donnée historique trouvée pour ce lot.</p>
     <?php if ($useHistory): ?>
-        <p style="color:#9ca3af;font-size:12px;">(Filtrage strict par lot_history.json)</p>
+        <p style="color:#9ca3af;font-size:12px;">(Filtrage strict par l'historique des lots)</p>
     <?php else: ?>
-        <p style="color:#9ca3af;font-size:12px;">(Fallback : filtrage via config_lots.json)</p>
+        <p style="color:#9ca3af;font-size:12px;">(Fallback : filtrage via la config des lots)</p>
     <?php endif; ?>
     </body>
     </html>
@@ -322,8 +276,8 @@ if ($globalStart !== null && $globalEnd !== null) {
     </h1>
 
     <div class="hint">
-        Bande min/max (L) + courbe moyenne. <?php echo $useHistory ? 'Filtrage strict via <strong>lot_history.json</strong>.' : 'Fallback via <strong>config_lots.json</strong>.'; ?>
-        <br>Offsets par capteur appliqués (offsets_creux.json).
+        Bande min/max (L) + courbe moyenne. <?php echo $useHistory ? 'Filtrage strict via l\'<strong>historique des lots</strong>.' : 'Fallback via la <strong>config des lots</strong>.'; ?>
+        <br>Offsets par capteur appliqués.
     </div>
 
     <div class="chart-container">

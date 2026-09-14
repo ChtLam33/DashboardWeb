@@ -1,20 +1,14 @@
 <?php
 // barriques/send_push_test.php
 
+require __DIR__ . '/barriques_lib.php';
 require __DIR__ . '/../vendor/autoload.php';
 
 use Minishlink\WebPush\WebPush;
 use Minishlink\WebPush\Subscription;
 
-// Fichier où push_subscribe.php stocke les abonnements
-$subsFile = __DIR__ . '/subscriptions.json';
-
-if (!file_exists($subsFile)) {
-    die("Aucun fichier subscriptions.json\n");
-}
-
-$subs = json_decode(file_get_contents($subsFile), true);
-if (!is_array($subs) || empty($subs)) {
+$subs = loadPushSubscriptions();
+if (empty($subs)) {
     die("Aucun abonnement enregistré\n");
 }
 
