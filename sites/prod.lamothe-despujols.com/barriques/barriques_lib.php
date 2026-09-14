@@ -1,18 +1,57 @@
 <?php
+// barriques_lib.php
 
-/**
- * Analyse une mesure RAW ADC et renvoie :
- * - niveau (1–7)
- * - couleur
- * - creux en cm (min/max)
- * - creux en litres (min/max)
- */
+/* =========================================================
+   PATHS
+   ========================================================= */
+function creuxOffsetsFilePath(): string {
+    return __DIR__ . '/offsets_creux.json';
+}
 
-function interpret_raw($raw)
-{
-    $raw = intval($raw);
+function lotHistoryFilePath(): string {
+    return __DIR__ . '/lot_history.json';
+}
 
-    // Structure de la grille de paliers
+/* =========================================================
+   OFFSETS CREUX
+   - offsets_creux.json : { "330989340": 0.7, "330989341": -0.3, ... }
+   - offset en cm, appliqué sur creux_cm et dérivé en litres
+   ========================================================= */
+function loadCreuxOffsets(): array {
+    $file = creuxOffsetsFilePath();
+    if (!file_exists($file)) return [];
+    $json = file_get_contents($file);
+    $data = json_decode($json, true);
+    return is_array($data) ? $data : [];
+}
+
+function saveCreuxOffsets(array $offsets): void {
+    $file = creuxOffsetsFilePath();
+    file_put_contents($file, json_encode($offsets, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+}
+
+function getCreuxOffsetForSensor(string $sensorId): float {
+    static $cache = null;
+    if ($cache === null) {
+        $cache = loadCreuxOffsets();
+    }
+    $sensorId = (string)$sensorId;
+
+    if (!isset($cache[$sensorId])) return 0.0;
+
+    $v = $cache[$sensorId];
+    if (is_numeric($v)) return (float)$v;
+
+    return 0.0;
+}
+
+/* =========================================================
+   INTERPRÉTATION RAW (palier) + offset creux en cm (optionnel)
+   ========================================================= */
+function interpret_raw(int $raw, float $offsetCm = 0.0): array {
+    $raw = (int)$raw;
+
+    // Grille d'origine
     $paliers = [
         [
             'min' => 1600,
@@ -55,146 +94,293 @@ function interpret_raw($raw)
             'creux_l'  => [6.2, 8.0],
         ],
         [
-            'min' => 1,
+            'min' => 0,
             'max' => 499,
             'niveau' => 6,
             'couleur' => 'rouge_ultra',
             'creux_cm' => [7.0, 10.0],
             'creux_l'  => [8.0, 12.0],
         ],
-        [
-            'min' => 0,
-            'max' => 0,
-            'niveau' => 7,
-            'couleur' => 'erreur',
-            'creux_cm' => [null, null],
-            'creux_l'  => [null, null],
-        ],
     ];
 
     foreach ($paliers as $p) {
         if ($raw >= $p['min'] && $raw <= $p['max']) {
+
+            $cmMin = $p['creux_cm'][0];
+            $cmMax = $p['creux_cm'][1];
+            $lMin  = $p['creux_l'][0];
+            $lMax  = $p['creux_l'][1];
+
+            // Offset cm (empêcher creux négatif)
+            if ($cmMin !== null && $cmMax !== null) {
+                $cmMin = (float)$cmMin + $offsetCm;
+                $cmMax = (float)$cmMax + $offsetCm;
+                if ($cmMin < 0) $cmMin = 0.0;
+                if ($cmMax < 0) $cmMax = 0.0;
+            }
+
+            // Conversion offset -> litres (interpolation sur le palier)
+            if ($lMin !== null && $lMax !== null && $p['creux_cm'][0] !== null && $p['creux_cm'][1] !== null) {
+                $baseCmMin = (float)$p['creux_cm'][0];
+                $baseCmMax = (float)$p['creux_cm'][1];
+                $baseLCm   = ($baseCmMax > $baseCmMin)
+                    ? (((float)$lMax - (float)$lMin) / ($baseCmMax - $baseCmMin))
+                    : 0.0;
+
+                $lMin = (float)$lMin + ($offsetCm * $baseLCm);
+                $lMax = (float)$lMax + ($offsetCm * $baseLCm);
+                if ($lMin < 0) $lMin = 0.0;
+                if ($lMax < 0) $lMax = 0.0;
+            }
+
             return [
-                'niveau'   => $p['niveau'],
-                'couleur'  => $p['couleur'],
-                'raw'      => $raw,
-                'creux_cm_min' => $p['creux_cm'][0],
-                'creux_cm_max' => $p['creux_cm'][1],
-                'creux_l_min'  => $p['creux_l'][0],
-                'creux_l_max'  => $p['creux_l'][1],
+                'niveau'       => $p['niveau'],
+                'couleur'      => $p['couleur'],
+                'raw'          => $raw,
+                'creux_cm_min' => ($cmMin === null ? null : round((float)$cmMin, 1)),
+                'creux_cm_max' => ($cmMax === null ? null : round((float)$cmMax, 1)),
+                'creux_l_min'  => ($lMin  === null ? null : round((float)$lMin,  1)),
+                'creux_l_max'  => ($lMax  === null ? null : round((float)$lMax,  1)),
             ];
         }
     }
 
-    // fallback
+    // Normalement inatteignable depuis tes min/max, mais on garde un fallback
     return [
-        'niveau' => 7,
-        'couleur' => 'erreur',
-        'raw' => $raw,
+        'niveau'       => 7,
+        'couleur'      => 'erreur',
+        'raw'          => $raw,
         'creux_cm_min' => null,
         'creux_cm_max' => null,
-        'creux_l_min' => null,
-        'creux_l_max' => null,
+        'creux_l_min'  => null,
+        'creux_l_max'  => null,
     ];
 }
 
-// ======================================================
-//  Gestion de l'historique des lots par capteur
-//  Fichier : lot_history.json
-//  Structure :
-//  {
-//    "330989340": [
-//       { "lot": "L24", "from_ts": 1764986000, "to_ts": 1767500000 },
-//       { "lot": "L25", "from_ts": 1767500001, "to_ts": null }
-//    ],
-//    ...
-//  }
-// ======================================================
-
-/**
- * Charge l'historique des lots.
- *
- * @return array
- */
-function loadLotHistory(): array
-{
-    $file = __DIR__ . '/lot_history.json';
-    if (!file_exists($file)) {
-        return [];
-    }
+/* =========================================================
+   LOT HISTORY
+   Compatibilité :
+   - Format A : { "id": [ {lot, from_ts, to_ts, barriques?}, ... ] }
+   - Format "plat" (sécurité) : [ {id, lot, from_ts/start_ts, to_ts/end_ts, barriques?}, ... ]
+   ========================================================= */
+function loadLotHistory(): array {
+    $file = lotHistoryFilePath();
+    if (!file_exists($file)) return [];
     $json = file_get_contents($file);
     $data = json_decode($json, true);
     return is_array($data) ? $data : [];
 }
 
-/**
- * Sauvegarde l'historique des lots.
- *
- * @param array $history
- * @return void
- */
-function saveLotHistory(array $history): void
-{
-    $file = __DIR__ . '/lot_history.json';
-    file_put_contents(
-        $file,
-        json_encode($history, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-    );
+function saveLotHistory(array $history): void {
+    $file = lotHistoryFilePath();
+    file_put_contents($file, json_encode($history, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
 /**
- * Met à jour l'historique des lots pour un capteur donné
- * quand son lot change (L24 -> L25, ou vide -> L24, etc.).
- *
- * - Si $oldLot = '' et $newLot != '' :
- *      on crée un nouveau segment { lot: newLot, from_ts: now, to_ts: null }
- * - Si $oldLot != '' et $newLot = '' :
- *      on "ferme" le dernier segment (to_ts = now - 1)
- * - Si $oldLot != '' et $newLot != '' et différent :
- *      on ferme le dernier segment (to_ts = now - 1)
- *      puis on crée un nouveau segment pour $newLot
- *
- * @param string $sensorId
- * @param string $oldLot
- * @param string $newLot
- * @param int|null $changeTs timestamp UNIX (par défaut time())
- * @return void
+ * Normalise lot_history en format assoc :
+ *  [id] => [ ['lot'=>..., 'from_ts'=>..., 'to_ts'=>..., 'barriques'=>...], ... ]
  */
-function updateLotHistoryOnLotChange(string $sensorId, string $oldLot, string $newLot, ?int $changeTs = null): void
-{
+function normalizeLotHistory(array $hist): array {
+    if (empty($hist)) return [];
+
+    // Déjà assoc ?
+    $isAssoc = array_keys($hist) !== range(0, count($hist) - 1);
+    if ($isAssoc) {
+        // s'assurer que chaque segment a barriques (option B : 0 si inconnu)
+        foreach ($hist as $sid => &$periods) {
+            if (!is_array($periods)) { $periods = []; continue; }
+            foreach ($periods as &$p) {
+                if (!is_array($p)) { $p = []; continue; }
+                if (!isset($p['barriques'])) $p['barriques'] = 0;
+                // harmoniser clés éventuelles
+                if (!isset($p['from_ts']) && isset($p['start_ts'])) $p['from_ts'] = (int)$p['start_ts'];
+                if (!array_key_exists('to_ts', $p) && array_key_exists('end_ts', $p)) $p['to_ts'] = $p['end_ts'];
+            }
+            unset($p);
+
+            usort($periods, fn($a,$b) => ((int)($a['from_ts'] ?? 0)) <=> ((int)($b['from_ts'] ?? 0)));
+        }
+        unset($periods);
+
+        return $hist;
+    }
+
+    // Format plat => reconstruire assoc
+    $out = [];
+    foreach ($hist as $entry) {
+        if (!is_array($entry)) continue;
+
+        $id  = trim((string)($entry['id'] ?? ''));
+        $lot = trim((string)($entry['lot'] ?? ''));
+        if ($id === '' || $lot === '') continue;
+
+        $fromTs = 0;
+        if (isset($entry['from_ts'])) $fromTs = (int)$entry['from_ts'];
+        elseif (isset($entry['start_ts'])) $fromTs = (int)$entry['start_ts'];
+
+        $toRaw = $entry['to_ts'] ?? ($entry['end_ts'] ?? null);
+        $toTs  = ($toRaw === null) ? null : (int)$toRaw;
+
+        if ($fromTs <= 0) continue;
+
+        $bar = isset($entry['barriques']) ? (int)$entry['barriques'] : 0;
+
+        $out[$id] ??= [];
+        $out[$id][] = [
+            'lot'       => $lot,
+            'from_ts'   => $fromTs,
+            'to_ts'     => $toTs,
+            'barriques' => $bar,
+        ];
+    }
+
+    foreach ($out as &$periods) {
+        usort($periods, fn($a,$b) => ((int)$a['from_ts']) <=> ((int)$b['from_ts']));
+        // option B : barriques toujours présent
+        foreach ($periods as &$p) {
+            if (!isset($p['barriques'])) $p['barriques'] = 0;
+        }
+        unset($p);
+    }
+    unset($periods);
+
+    return $out;
+}
+
+/**
+ * Retourne [id] => periods normalisés.
+ */
+function loadLotHistoryNormalized(): array {
+    $hist = loadLotHistory();
+    return normalizeLotHistory(is_array($hist) ? $hist : []);
+}
+
+/**
+ * Retourne toutes les périodes d'un capteur (id), normalisées.
+ */
+function getLotPeriodsForSensor(string $sensorId, ?array $histNorm = null): array {
+    $sensorId = (string)$sensorId;
+    if ($histNorm === null) $histNorm = loadLotHistoryNormalized();
+    $periods = $histNorm[$sensorId] ?? [];
+    return is_array($periods) ? $periods : [];
+}
+
+/**
+ * Retourne les segments pour un lot donné (tous capteurs), sous forme de liste :
+ *  [ ['id'=>..., 'from_ts'=>..., 'to_ts'=>..., 'barriques'=>...], ... ]
+ */
+function getSegmentsForLot(string $lot, ?array $histNorm = null): array {
+    $lot = trim((string)$lot);
+    if ($lot === '') return [];
+    if ($histNorm === null) $histNorm = loadLotHistoryNormalized();
+
+    $out = [];
+    foreach ($histNorm as $sid => $periods) {
+        if (!is_array($periods)) continue;
+        foreach ($periods as $p) {
+            if (!is_array($p)) continue;
+            $pLot = trim((string)($p['lot'] ?? ''));
+            if ($pLot !== $lot) continue;
+
+            $fromTs = (int)($p['from_ts'] ?? 0);
+            $toTs   = array_key_exists('to_ts', $p) ? $p['to_ts'] : null;
+            $toTs   = ($toTs === null) ? null : (int)$toTs;
+            if ($fromTs <= 0) continue;
+
+            $out[] = [
+                'id'        => (string)$sid,
+                'from_ts'   => $fromTs,
+                'to_ts'     => $toTs,
+                'barriques' => isset($p['barriques']) ? (int)$p['barriques'] : 0,
+            ];
+        }
+    }
+
+    usort($out, fn($a,$b) => ((int)$a['from_ts']) <=> ((int)$b['from_ts']));
+    return $out;
+}
+
+/**
+ * True si un lot a AU MOINS une période ouverte (to_ts=null).
+ */
+function lotHasOpenSegment(string $lot, ?array $histNorm = null): bool {
+    $lot = trim((string)$lot);
+    if ($lot === '') return false;
+    if ($histNorm === null) $histNorm = loadLotHistoryNormalized();
+
+    foreach ($histNorm as $sid => $periods) {
+        if (!is_array($periods)) continue;
+        foreach ($periods as $p) {
+            if (!is_array($p)) continue;
+            if (trim((string)($p['lot'] ?? '')) !== $lot) continue;
+            if (!array_key_exists('to_ts', $p) || $p['to_ts'] === null) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Update lot history on lot change
+ * + option : figer "barriques" sur le segment fermé et écrire "barriques" sur le segment ouvert
+ *
+ * Option B : si barriques inconnu => 0.
+ */
+function updateLotHistoryOnLotChange(
+    string $sensorId,
+    string $oldLot,
+    string $newLot,
+    ?int $changeTs = null,
+    ?int $oldLotBarriques = null,
+    ?int $newLotBarriques = null
+): void {
     $changeTs = $changeTs ?? time();
     $sensorId = (string)$sensorId;
 
-    // Pas de changement
-    if ($oldLot === $newLot) {
-        return;
-    }
+    if ($oldLot === $newLot) return;
 
-    $history = loadLotHistory();
+    $history  = loadLotHistory();              // on garde le fichier tel quel (format A attendu)
     $segments = $history[$sensorId] ?? [];
 
-    // On ferme le dernier segment si besoin
+    // 1) Fermer le segment ouvert si existant
     if (!empty($segments)) {
         $lastIndex = count($segments) - 1;
-        if ($segments[$lastIndex]['to_ts'] === null) {
-            // On ferme seulement si le dernier lot correspond à l'ancien lot
-            // ou si on passe à "aucun lot"
-            if ($oldLot === '' || $segments[$lastIndex]['lot'] === $oldLot) {
+        if (($segments[$lastIndex]['to_ts'] ?? null) === null) {
+            $segLot = (string)($segments[$lastIndex]['lot'] ?? '');
+            if ($oldLot === '' || $segLot === $oldLot) {
                 $segments[$lastIndex]['to_ts'] = $changeTs - 1;
+
+                // figer barriques sur le lot qu'on ferme (si info fournie)
+                if ($oldLotBarriques !== null) {
+                    $segments[$lastIndex]['barriques'] = (int)$oldLotBarriques;
+                } else {
+                    // si déjà présent on garde, sinon 0 (option B)
+                    if (!isset($segments[$lastIndex]['barriques'])) {
+                        $segments[$lastIndex]['barriques'] = 0;
+                    }
+                }
             }
         }
     }
 
-    // Si un nouveau lot est défini, on crée un segment "ouvert"
+    // 2) Ouvrir un segment pour le nouveau lot
     if ($newLot !== '') {
         $segments[] = [
-            'lot'     => $newLot,
-            'from_ts'=> $changeTs,
-            'to_ts'  => null,
+            'lot'       => $newLot,
+            'from_ts'   => $changeTs,
+            'to_ts'     => null,
+            'barriques' => (int)($newLotBarriques ?? 0), // option B : 0 si inconnu
         ];
     }
 
-    // On ré-enregistre pour ce capteur
     $history[$sensorId] = $segments;
     saveLotHistory($history);
+}
+
+/* =========================================================
+   LOG READER (optionnel mais pratique)
+   ========================================================= */
+function read_barriques_log_records(string $logFile): array {
+    if (!file_exists($logFile)) return [];
+    $lines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    return is_array($lines) ? $lines : [];
 }
