@@ -1,6 +1,8 @@
 <?php
 // barriques/api_post.php
 
+require __DIR__ . '/barriques_lib.php';
+
 // Réponse JSON par défaut
 header('Content-Type: application/json; charset=utf-8');
 
@@ -78,6 +80,23 @@ $line = sprintf(
 );
 
 file_put_contents($logFile, $line, FILE_APPEND);
+
+// 4bis) Ecriture en parallele dans SQLite (phase 1 migration, voir barriques_lib.php)
+// Le log texte ci-dessus reste la sauvegarde de reference tant que la transition n'est pas validee.
+try {
+    insertMeasurement(
+        (string)$id,
+        date('c'),
+        (int)$value_raw,
+        ($battery_mv === null ? null : (int)$battery_mv),
+        ($rssi === null ? null : (int)$rssi),
+        ($fw === null ? null : (string)$fw),
+        (int)$ts
+    );
+} catch (\Throwable $e) {
+    // Ne bloque jamais la reponse au capteur : le log texte suffit si SQLite echoue.
+    error_log('[barriques] insertMeasurement failed: ' . $e->getMessage());
+}
 
 // 5) Réponse envoyée au capteur
 // (plus tard on mettra ici un "sleep_seconds" pour piloter le deep sleep)

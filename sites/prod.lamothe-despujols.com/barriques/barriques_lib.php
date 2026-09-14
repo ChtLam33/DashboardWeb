@@ -12,6 +12,60 @@ function lotHistoryFilePath(): string {
     return __DIR__ . '/lot_history.json';
 }
 
+function barriquesDbPath(): string {
+    return __DIR__ . '/barriques.sqlite';
+}
+
+/* =========================================================
+   SQLITE (mesures)
+   - Phase 1 de la migration DB (voir audit sept. 2026) : seules les
+     mesures (ex logs/barriques.log) passent en SQLite. Les fichiers
+     de config (lots, offsets, notifs, abonnements push) restent en
+     JSON pour l'instant.
+   ========================================================= */
+function dbConnect(): PDO {
+    static $pdo = null;
+    if ($pdo === null) {
+        $pdo = new PDO('sqlite:' . barriquesDbPath());
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('PRAGMA journal_mode = WAL;');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS mesures (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sensor_id TEXT NOT NULL,
+            date_iso TEXT NOT NULL,
+            raw INTEGER NOT NULL,
+            battery_mv INTEGER,
+            rssi INTEGER,
+            fw TEXT,
+            ts INTEGER NOT NULL
+        )');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mesures_sensor_ts ON mesures(sensor_id, ts)');
+    }
+    return $pdo;
+}
+
+function insertMeasurement(string $sensorId, string $dateIso, int $raw, ?int $batteryMv, ?int $rssi, ?string $fw, int $ts): void {
+    $pdo = dbConnect();
+    $stmt = $pdo->prepare(
+        'INSERT INTO mesures (sensor_id, date_iso, raw, battery_mv, rssi, fw, ts) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+    $stmt->execute([$sensorId, $dateIso, $raw, $batteryMv, $rssi, $fw, $ts]);
+}
+
+/**
+ * Toutes les mesures, dans l'ordre d'insertion (equivalent a l'ordre
+ * d'origine du fichier log). Meme forme que les anciennes lignes TSV
+ * parsees : ['date_iso'=>..., 'id'=>..., 'raw'=>..., 'batt'=>...,
+ * 'rssi'=>..., 'fw'=>..., 'ts'=>...]
+ */
+function getAllMeasurementRows(): array {
+    $pdo = dbConnect();
+    $stmt = $pdo->query(
+        'SELECT date_iso, sensor_id AS id, raw, battery_mv AS batt, rssi, fw, ts FROM mesures ORDER BY id ASC'
+    );
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
 /* =========================================================
    OFFSETS CREUX
    - offsets_creux.json : { "330989340": 0.7, "330989341": -0.3, ... }

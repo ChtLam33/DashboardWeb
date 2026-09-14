@@ -8,7 +8,6 @@
 
 require __DIR__ . '/barriques_lib.php';
 
-$logFile        = __DIR__ . '/logs/barriques.log';
 $configLotsFile = __DIR__ . '/config_lots.json';
 $lotHistoryFile = __DIR__ . '/lot_history.json';
 
@@ -86,23 +85,20 @@ function findLotAtTs(array $periods, int $ts): string {
 /* ===============================
    4) Lecture log -> points (ts, min, max)
    =============================== */
-$records = read_barriques_log_records($logFile);
+$records = getAllMeasurementRows();
 $points = [];
 
-foreach ($records as $line) {
-    $parts = preg_split("/\t+/", trim((string)$line));
-    if (!$parts || count($parts) < 7) continue;
+foreach ($records as $row) {
+    $logId = trim((string)($row['id'] ?? ''));
+    if ($logId !== $id) continue;
 
-    [$dateIso, $logId, $raw, $batt, $rssi, $fw, $ts] = $parts;
-    if (trim((string)$logId) !== $id) continue;
-
-    $tsInt = (int)$ts;
+    $tsInt = (int)($row['ts'] ?? 0);
     if ($tsInt <= 0) {
-        $tsInt = strtotime((string)$dateIso) ?: 0;
+        $tsInt = strtotime((string)($row['date_iso'] ?? '')) ?: 0;
     }
     if ($tsInt <= 0) continue;
 
-    $interp = interpret_raw((int)$raw, (float)$offset);
+    $interp = interpret_raw((int)($row['raw'] ?? 0), (float)$offset);
     if ($interp['creux_l_min'] === null || $interp['creux_l_max'] === null) continue;
 
     $points[] = [

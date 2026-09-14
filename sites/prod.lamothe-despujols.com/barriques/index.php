@@ -162,32 +162,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 /* =========================================================
    4) LECTURE LOG (dernière mesure par capteur + lignes brutes)
    ========================================================= */
-$logFile  = __DIR__ . '/logs/barriques.log';
 $capteurs = []; // dernière mesure
-$logLines = [];
+$measurementRows = getAllMeasurementRows(); // SQLite (phase 1 migration, voir barriques_lib.php)
 
-if (file_exists($logFile)) {
-    $logLines = read_barriques_log_records($logFile);
+foreach ($measurementRows as $row) {
+    $id = trim((string)($row['id'] ?? ''));
+    if ($id === '') continue;
 
-    foreach ($logLines as $line) {
-        $parts = explode("\t", $line);
-        if (count($parts) < 7) continue;
-
-        [$dateIso, $id, $raw, $batt, $rssi, $fw, $ts] = $parts;
-
-        $id = trim((string)$id);
-        if ($id === '') continue;
-
-        $capteurs[$id] = [
-            'date_iso' => trim((string)$dateIso),
-            'id'       => $id,
-            'raw'      => (int)$raw,
-            'batt'     => (int)$batt,
-            'rssi'     => (int)$rssi,
-            'fw'       => trim((string)$fw),
-            'ts'       => (int)$ts,
-        ];
-    }
+    $capteurs[$id] = [
+        'date_iso' => trim((string)($row['date_iso'] ?? '')),
+        'id'       => $id,
+        'raw'      => (int)($row['raw'] ?? 0),
+        'batt'     => (int)($row['batt'] ?? 0),
+        'rssi'     => (int)($row['rssi'] ?? 0),
+        'fw'       => trim((string)($row['fw'] ?? '')),
+        'ts'       => (int)($row['ts'] ?? 0),
+    ];
 }
 ksort($capteurs);
 
@@ -264,33 +254,27 @@ foreach (array_keys($lotsAgg) as $lotName) {
    ========================================================= */
 $historyById = []; // id => [ {ts,min,max}, ... ] en litres
 
-if (!empty($logLines)) {
-    foreach ($logLines as $line) {
-        $parts = explode("\t", $line);
-        if (count($parts) < 7) continue;
+foreach ($measurementRows as $row) {
+    $id = trim((string)($row['id'] ?? ''));
+    $ts = (int)($row['ts'] ?? 0);
+    if ($id === '' || $ts <= 0) continue;
 
-        [$dateIso, $id, $raw, $batt, $rssi, $fw, $ts] = $parts;
-        $id = trim((string)$id);
-        $ts = (int)$ts;
-        if ($id === '' || $ts <= 0) continue;
+    $offset = getCreuxOffsetForSensor($id);
+    $interp = interpret_raw((int)($row['raw'] ?? 0), (float)$offset);
+    if ($interp['creux_l_min'] === null || $interp['creux_l_max'] === null) continue;
 
-        $offset = getCreuxOffsetForSensor((string)$id);
-        $interp = interpret_raw((int)$raw, (float)$offset);
-        if ($interp['creux_l_min'] === null || $interp['creux_l_max'] === null) continue;
-
-        $historyById[$id] ??= [];
-        $historyById[$id][] = [
-            'ts'  => $ts,
-            'min' => (float)$interp['creux_l_min'],
-            'max' => (float)$interp['creux_l_max'],
-        ];
-    }
-
-    foreach ($historyById as &$arr) {
-        usort($arr, fn($a, $b) => $a['ts'] <=> $b['ts']);
-    }
-    unset($arr);
+    $historyById[$id] ??= [];
+    $historyById[$id][] = [
+        'ts'  => $ts,
+        'min' => (float)$interp['creux_l_min'],
+        'max' => (float)$interp['creux_l_max'],
+    ];
 }
+
+foreach ($historyById as &$arr) {
+    usort($arr, fn($a, $b) => $a['ts'] <=> $b['ts']);
+}
+unset($arr);
 
 // Périodes de lots via lot_history.json
 $lotHistoryFile = __DIR__ . '/lot_history.json';

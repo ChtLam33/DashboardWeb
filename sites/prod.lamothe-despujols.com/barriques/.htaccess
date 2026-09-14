@@ -1,0 +1,4 @@
+# Empeche le telechargement direct de la base SQLite
+<FilesMatch "\.sqlite(-wal|-shm)?$">
+    Require all denied
+</FilesMatch>

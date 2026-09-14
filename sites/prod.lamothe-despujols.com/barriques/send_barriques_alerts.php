@@ -9,7 +9,6 @@ use Minishlink\WebPush\WebPush;
 use Minishlink\WebPush\Subscription;
 
 // ---------- FICHIERS ----------
-$logFile           = __DIR__ . '/logs/barriques.log';
 $configLotsFile    = __DIR__ . '/config_lots.json';
 $notifConfigFile   = __DIR__ . '/notifications_config.json';
 $subscriptionsFile = __DIR__ . '/subscriptions.json';
@@ -105,36 +104,26 @@ if (!file_exists($configLotsFile)) {
     }
 }
 
-// ---------- 3. LIRE DERNIÈRES MESURES PAR CAPTEUR ----------
-if (!file_exists($logFile)) {
-    echo "[INFO] Aucun log trouvé ($logFile), pas de notification.\n";
-    exit(0);
-}
-
-$lines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-if (!$lines) {
-    echo "[INFO] Log vide, pas de notification.\n";
+// ---------- 3. LIRE DERNIÈRES MESURES PAR CAPTEUR (SQLite, phase 1 migration) ----------
+$measurementRows = getAllMeasurementRows();
+if (!$measurementRows) {
+    echo "[INFO] Aucune mesure trouvée, pas de notification.\n";
     exit(0);
 }
 
 $capteurs = []; // id => infos dernière mesure
-foreach ($lines as $line) {
-    $parts = explode("\t", $line);
-    if (count($parts) < 7) continue;
-
-    list($dateIso, $id, $raw, $batt, $rssi, $fw, $ts) = $parts;
-
-    $id = trim($id);
+foreach ($measurementRows as $row) {
+    $id = trim((string)($row['id'] ?? ''));
     if ($id === '') continue;
 
     $capteurs[$id] = [
-        'date_iso' => trim($dateIso),
+        'date_iso' => trim((string)($row['date_iso'] ?? '')),
         'id'       => $id,
-        'raw'      => (int)$raw,
-        'batt'     => (int)$batt,
-        'rssi'     => (int)$rssi,
-        'fw'       => trim($fw),
-        'ts'       => (int)$ts,
+        'raw'      => (int)($row['raw'] ?? 0),
+        'batt'     => (int)($row['batt'] ?? 0),
+        'rssi'     => (int)($row['rssi'] ?? 0),
+        'fw'       => trim((string)($row['fw'] ?? '')),
+        'ts'       => (int)($row['ts'] ?? 0),
     ];
 }
 

@@ -15,38 +15,27 @@ if ($lot === '') {
 }
 
 // ---------- 1) Fichiers ----------
-$logFile        = __DIR__ . '/logs/barriques.log';
 $configLotsFile = __DIR__ . '/config_lots.json';
 $lotHistoryFile = __DIR__ . '/lot_history.json';
 
-// ---------- 2) Log ----------
-if (!file_exists($logFile)) {
-    echo "Aucun fichier de log trouvé.";
-    exit;
-}
-
+// ---------- 2) Mesures (SQLite, phase 1 migration) ----------
 $rows = [];
-$lines = read_barriques_log_records($logFile);
-foreach ($lines as $line) {
-    $parts = preg_split("/\t+/", trim($line));
-    if (count($parts) < 7) continue;
-
-    list($dateIso, $id, $raw, $batt, $rssi, $fw, $ts) = $parts;
-
-    $id = trim((string)$id);
+$measurementRows = getAllMeasurementRows();
+foreach ($measurementRows as $row) {
+    $id = trim((string)($row['id'] ?? ''));
     if ($id === '') continue;
 
-    $tsInt = (int)$ts;
+    $tsInt = (int)($row['ts'] ?? 0);
     if ($tsInt <= 0) {
-        $tsInt = strtotime((string)$dateIso) ?: 0;
+        $tsInt = strtotime((string)($row['date_iso'] ?? '')) ?: 0;
     }
     if ($tsInt <= 0) continue;
 
     $rows[] = [
         'id'       => $id,
-        'raw'      => (int)$raw,
+        'raw'      => (int)($row['raw'] ?? 0),
         'ts'       => $tsInt,
-        'date_iso' => trim((string)$dateIso),
+        'date_iso' => trim((string)($row['date_iso'] ?? '')),
     ];
 }
 

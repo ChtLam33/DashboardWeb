@@ -1,1 +1,4 @@
 desktop.ini
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
