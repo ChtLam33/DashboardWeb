@@ -764,7 +764,9 @@ $modeBanner = implode(' • ', $modeParts);
         .section-title{font-size:15px;font-weight:500;margin:0;color:var(--accent);letter-spacing:.03em;}
 
         .settings-panel{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:999;}
-        .settings-content{background:#111;border:1px solid #444;border-radius:8px;padding:1.5rem;min-width:260px;max-width:360px;color:#f5f5f5;box-shadow:0 0 20px rgba(0,0,0,.6);}
+        .settings-content{background:#111;border:1px solid #444;border-radius:8px;padding:1.5rem;min-width:260px;max-width:360px;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;color:#f5f5f5;box-shadow:0 0 20px rgba(0,0,0,.6);}
+        .info-icon{display:inline-block;cursor:pointer;color:var(--text-muted);border:1px solid #444;border-radius:50%;width:16px;height:16px;line-height:15px;text-align:center;font-size:11px;font-style:italic;user-select:none;}
+        .info-icon:hover, .info-icon:focus{color:#f3d26b;border-color:#f3d26b;}
         .settings-content h2{margin-top:0;margin-bottom:1rem;font-size:1.2rem;color:#f3d26b;}
         .settings-content fieldset{border:1px solid #333;padding:.8rem;margin-bottom:.8rem;}
         .settings-content legend{padding:0 .4rem;}
@@ -1129,6 +1131,16 @@ $modeBanner = implode(' • ', $modeParts);
                         </div>
                     </div>
                 </div>
+
+                <div class="settings-row" style="display:flex; align-items:baseline; gap:6px; flex-wrap:wrap;">
+                    <span id="autonomie-result" style="color:#f3d26b;">-</span>
+                    <span class="info-icon" id="autonomie-info-toggle" role="button" tabindex="0">i</span>
+                </div>
+                <div id="autonomie-info-box" class="small" style="display:none; margin-top:4px;">
+                    Estimation théorique (pile neuve) basée sur : pile 18650 3,7 V 3000 mAh,
+                    consommation active ≈120 mA pendant 5 s par mesure, veille ≈40 µA
+                    (inclut les ~19 µA du pont diviseur batterie, en continu), autodécharge ≈3 %/mois.
+                </div>
             </fieldset>
 
             <div class="settings-actions">
@@ -1136,36 +1148,6 @@ $modeBanner = implode(' • ', $modeParts);
                 <button type="submit" class="icon-btn">💾</button>
             </div>
         </form>
-
-        <fieldset>
-            <legend>Estimation d'autonomie batterie</legend>
-
-            <div class="settings-row">
-                <label for="batt_capacity_mah">Capacité pile (mAh)</label>
-                <input type="number" id="batt_capacity_mah" min="0" step="1" value="3000">
-            </div>
-            <div class="settings-row">
-                <label for="batt_active_ma">Courant actif (mA)</label>
-                <input type="number" id="batt_active_ma" min="0" step="1" value="120">
-            </div>
-            <div class="settings-row">
-                <label for="batt_active_s">Durée active par mesure (s)</label>
-                <input type="number" id="batt_active_s" min="0" step="1" value="5">
-            </div>
-            <div class="settings-row">
-                <label for="batt_sleep_ua">Courant de veille (µA)</label>
-                <input type="number" id="batt_sleep_ua" min="0" step="1" value="40">
-                <span class="small">inclut ~19 µA du pont diviseur batterie, en continu</span>
-            </div>
-            <div class="settings-row">
-                <label for="batt_selfdischarge_pct">Autodécharge pile (%/mois)</label>
-                <input type="number" id="batt_selfdischarge_pct" min="0" step="0.5" value="3">
-            </div>
-
-            <div class="settings-row" style="margin-top:0.8rem; font-size:1rem; color:#f3d26b;">
-                <span id="autonomie-result">-</span>
-            </div>
-        </fieldset>
     </div>
 </div>
 
@@ -1186,16 +1168,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const minutes = parseInt(document.getElementById("measure_interval_minutes").value, 10) || 0;
         const intervalS = Math.max(60, jours * 86400 + minutes * 60);
 
-        const capaciteMah     = parseFloat(document.getElementById("batt_capacity_mah").value) || 0;
-        const activeMa        = parseFloat(document.getElementById("batt_active_ma").value) || 0;
-        const activeS         = parseFloat(document.getElementById("batt_active_s").value) || 0;
-        const veilleUa        = parseFloat(document.getElementById("batt_sleep_ua").value) || 0;
-        const autodechargePct = parseFloat(document.getElementById("batt_selfdischarge_pct").value) || 0;
-
-        if (capaciteMah <= 0) {
-            resultEl.textContent = "-";
-            return;
-        }
+        // Hypotheses fixes (voir icone "i") : pile 18650 3.7V 3000 mAh
+        const capaciteMah     = 3000;
+        const activeMa        = 120;
+        const activeS         = 5;
+        const veilleUa        = 40; // inclut ~19 uA du pont diviseur 100k/100k en continu
+        const autodechargePct = 3;  // %/mois
 
         const cyclesParJour           = 86400 / intervalS;
         const chargeActiveParCycle    = (activeMa * activeS) / 3600;
@@ -1216,17 +1194,28 @@ document.addEventListener("DOMContentLoaded", () => {
         const nbCycles        = autonomieJours * cyclesParJour;
 
         resultEl.innerHTML =
-            "≈ " + Math.round(nbCycles).toLocaleString('fr-FR') + " mesures possibles<br>" +
+            "≈ " + Math.round(nbCycles).toLocaleString('fr-FR') + " mesures possibles (pile pleine) — " +
             "≈ " + Math.round(autonomieJours).toLocaleString('fr-FR') + " jours" +
             " (" + (autonomieJours / 30).toFixed(1) + " mois / " + (autonomieJours / 365).toFixed(2) + " ans)";
     }
 
-    ["measure_interval_days", "measure_interval_minutes", "batt_capacity_mah", "batt_active_ma",
-     "batt_active_s", "batt_sleep_ua", "batt_selfdischarge_pct"].forEach((id) => {
+    ["measure_interval_days", "measure_interval_minutes"].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener("input", calcAutonomie);
     });
     calcAutonomie();
+
+    const autonomieInfoToggle = document.getElementById("autonomie-info-toggle");
+    const autonomieInfoBox    = document.getElementById("autonomie-info-box");
+    if (autonomieInfoToggle && autonomieInfoBox) {
+        const toggle = () => {
+            autonomieInfoBox.style.display = (autonomieInfoBox.style.display === "none") ? "block" : "none";
+        };
+        autonomieInfoToggle.addEventListener("click", toggle);
+        autonomieInfoToggle.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+        });
+    }
 
     const archivesHeader = document.getElementById("toggle-archives");
     const archivesBody   = document.getElementById("archives-body");
