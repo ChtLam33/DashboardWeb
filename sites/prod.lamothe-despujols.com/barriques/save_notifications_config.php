@@ -32,12 +32,13 @@ if ($weeklyDay < 1 || $weeklyDay > 7) {
     $weeklyDay = 2; // défaut : mardi
 }
 
-// Fréquence de mesure attendue (en jours) pour la logique de "capteur inactif"
+// Fréquence de mesure attendue (en jours, partie entière) pour la logique
+// de "capteur inactif" et pour le calcul de l'intervalle réel (avec les minutes)
 $measureIntervalDays = isset($_POST['measure_interval_days'])
     ? (int)$_POST['measure_interval_days']
     : 7;
-if ($measureIntervalDays < 1) {
-    $measureIntervalDays = 7;
+if ($measureIntervalDays < 0) {
+    $measureIntervalDays = 0;
 }
 
 // Marge de sécurité pour considérer un capteur inactif (en jours)
@@ -63,42 +64,23 @@ file_put_contents(
    2) Config globale capteurs (config.json)
    ========================================================= */
 
-// Lecture config existante (si besoin)
+// Minutes complémentaires aux jours (0 à 1439, soit moins de 24h)
+$measureIntervalMinutes = isset($_POST['measure_interval_minutes'])
+    ? (int)$_POST['measure_interval_minutes']
+    : 0;
+if ($measureIntervalMinutes < 0) $measureIntervalMinutes = 0;
+if ($measureIntervalMinutes > 1439) $measureIntervalMinutes = 1439;
+
+// Intervalle utilisé par le firmware : jours + minutes -> secondes
+// (plancher de securite 60s, le firmware applique aussi son propre plancher)
+$measureIntervalS = max(60, $measureIntervalDays * 86400 + $measureIntervalMinutes * 60);
+
+// Config capteurs (remplace entièrement config.json)
 $barConfig = [
-    'measure_interval_s'    => 604800,
-    'maintenance'           => true,
-    'test_mode'             => false,
-    'measure_interval_days' => 7,
+    'measure_interval_s'       => $measureIntervalS,
+    'measure_interval_days'    => $measureIntervalDays,
+    'measure_interval_minutes' => $measureIntervalMinutes,
 ];
-
-if (file_exists($barConfigFile)) {
-    $jsonBar = file_get_contents($barConfigFile);
-    $dataBar = json_decode($jsonBar, true);
-    if (is_array($dataBar)) {
-        $barConfig = array_merge($barConfig, $dataBar);
-    }
-}
-
-// Mode test (20s) ?
-$testMode = isset($_POST['test_mode']) ? true : false;
-
-// Maintenance (deep-sleep désactivé)
-$maintenance = isset($_POST['maintenance']) ? true : false;
-
-// Intervalle utilisé par le firmware
-if ($testMode) {
-    // Mode test : intervalle fixe de 20 secondes
-    $measureIntervalS = 20;
-} else {
-    // Mode normal : jours -> secondes
-    $measureIntervalS = $measureIntervalDays * 86400;
-}
-
-// Mise à jour de la config capteurs
-$barConfig['measure_interval_s']    = $measureIntervalS;
-$barConfig['maintenance']           = $maintenance;
-$barConfig['test_mode']             = $testMode;
-$barConfig['measure_interval_days'] = $measureIntervalDays;
 
 // Sauvegarde config.json
 file_put_contents(

@@ -57,10 +57,9 @@ if (file_exists($notifConfigFile)) {
    ========================================================= */
 $barConfigFile = __DIR__ . '/config.json';
 $barConfig = [
-    'measure_interval_s'    => 604800, // 7 jours
-    'maintenance'           => true,
-    'test_mode'             => false,
-    'measure_interval_days' => 7,
+    'measure_interval_s'       => 604800, // 7 jours
+    'measure_interval_days'    => 7,
+    'measure_interval_minutes' => 0,
 ];
 
 if (file_exists($barConfigFile)) {
@@ -68,11 +67,10 @@ if (file_exists($barConfigFile)) {
     $dataBar = json_decode($jsonBar, true);
     if (is_array($dataBar)) {
         if (isset($dataBar['measure_interval_s'])) $barConfig['measure_interval_s'] = max(60, (int)$dataBar['measure_interval_s']);
-        if (isset($dataBar['maintenance']))        $barConfig['maintenance'] = (bool)$dataBar['maintenance'];
-        if (isset($dataBar['test_mode']))          $barConfig['test_mode'] = (bool)$dataBar['test_mode'];
     }
 }
-$barConfig['measure_interval_days'] = max(1, (int)round($barConfig['measure_interval_s'] / 86400));
+$barConfig['measure_interval_days']    = intdiv((int)$barConfig['measure_interval_s'], 86400);
+$barConfig['measure_interval_minutes'] = intdiv((int)$barConfig['measure_interval_s'] % 86400, 60);
 
 /* =========================================================
    Offsets creux
@@ -643,10 +641,18 @@ $inactiveMeasureDays = max(1, (int)$barConfig['measure_interval_days']);
 $inactiveGraceDays   = max(0, (int)$notifConfig['offline_grace_days']);
 
 // Texte bannière
+$intervalParts = [];
+if ((int)$barConfig['measure_interval_days'] > 0) {
+    $intervalParts[] = (int)$barConfig['measure_interval_days'] . ' j';
+}
+if ((int)$barConfig['measure_interval_minutes'] > 0) {
+    $intervalParts[] = (int)$barConfig['measure_interval_minutes'] . ' min';
+}
+if (empty($intervalParts)) {
+    $intervalParts[] = '0 min';
+}
 $modeParts = [];
-$modeParts[] = 'Maintenance: ' . (!empty($barConfig['maintenance']) ? 'ON' : 'OFF');
-$modeParts[] = 'Test: ' . (!empty($barConfig['test_mode']) ? 'ON' : 'OFF');
-$modeParts[] = 'Intervalle: ' . (int)$barConfig['measure_interval_days'] . ' j';
+$modeParts[] = 'Intervalle: ' . implode(' ', $intervalParts);
 $modeBanner = implode(' • ', $modeParts);
 
 ?>
@@ -1112,24 +1118,16 @@ $modeBanner = implode(' • ', $modeParts);
 
                     <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
                         <div style="display:flex; align-items:center; gap:4px;">
-                            <input type="number" id="measure_interval_days" name="measure_interval_days" min="1"
-                                   value="<?php echo (int)$barConfig['measure_interval_days']; ?>"
-                                   <?php echo !empty($barConfig['test_mode']) ? 'disabled' : ''; ?>>
+                            <input type="number" id="measure_interval_days" name="measure_interval_days" min="0"
+                                   value="<?php echo (int)$barConfig['measure_interval_days']; ?>" style="width:70px;">
                             <span class="small">jours</span>
                         </div>
-
-                        <label style="display:flex; align-items:center; gap:4px;">
-                            <input type="checkbox" id="test_mode" name="test_mode" <?php echo !empty($barConfig['test_mode'])?'checked':''; ?>>
-                            <span class="small">Mode test (mesure toutes les 20 s)</span>
-                        </label>
+                        <div style="display:flex; align-items:center; gap:4px;">
+                            <input type="number" id="measure_interval_minutes" name="measure_interval_minutes" min="0" max="1439"
+                                   value="<?php echo (int)$barConfig['measure_interval_minutes']; ?>" style="width:70px;">
+                            <span class="small">minutes</span>
+                        </div>
                     </div>
-                </div>
-
-                <div class="settings-row" style="margin-top:0.8rem;">
-                    <label>
-                        <input type="checkbox" name="maintenance" <?php echo !empty($barConfig['maintenance'])?'checked':''; ?>>
-                        Mode maintenance (désactive le deep-sleep pour tous les capteurs)
-                    </label>
                 </div>
             </fieldset>
 
@@ -1138,6 +1136,36 @@ $modeBanner = implode(' • ', $modeParts);
                 <button type="submit" class="icon-btn">💾</button>
             </div>
         </form>
+
+        <fieldset>
+            <legend>Estimation d'autonomie batterie</legend>
+
+            <div class="settings-row">
+                <label for="batt_capacity_mah">Capacité pile (mAh)</label>
+                <input type="number" id="batt_capacity_mah" min="0" step="1" value="3000">
+            </div>
+            <div class="settings-row">
+                <label for="batt_active_ma">Courant actif (mA)</label>
+                <input type="number" id="batt_active_ma" min="0" step="1" value="120">
+            </div>
+            <div class="settings-row">
+                <label for="batt_active_s">Durée active par mesure (s)</label>
+                <input type="number" id="batt_active_s" min="0" step="1" value="5">
+            </div>
+            <div class="settings-row">
+                <label for="batt_sleep_ua">Courant de veille (µA)</label>
+                <input type="number" id="batt_sleep_ua" min="0" step="1" value="40">
+                <span class="small">inclut ~19 µA du pont diviseur batterie, en continu</span>
+            </div>
+            <div class="settings-row">
+                <label for="batt_selfdischarge_pct">Autodécharge pile (%/mois)</label>
+                <input type="number" id="batt_selfdischarge_pct" min="0" step="0.5" value="3">
+            </div>
+
+            <div class="settings-row" style="margin-top:0.8rem; font-size:1rem; color:#f3d26b;">
+                <span id="autonomie-result">-</span>
+            </div>
+        </fieldset>
     </div>
 </div>
 
@@ -1150,13 +1178,55 @@ document.addEventListener("DOMContentLoaded", () => {
     if (openSettings && settingsPanel) openSettings.addEventListener("click", () => settingsPanel.style.display="flex");
     if (closeSettings && settingsPanel) closeSettings.addEventListener("click", () => settingsPanel.style.display="none");
 
-    const testModeCheckbox = document.getElementById("test_mode");
-    const measureDaysInput = document.getElementById("measure_interval_days");
-    if (testModeCheckbox && measureDaysInput) {
-        const sync = () => measureDaysInput.disabled = testModeCheckbox.checked;
-        sync();
-        testModeCheckbox.addEventListener("change", sync);
+    function calcAutonomie() {
+        const resultEl = document.getElementById("autonomie-result");
+        if (!resultEl) return;
+
+        const jours   = parseInt(document.getElementById("measure_interval_days").value, 10) || 0;
+        const minutes = parseInt(document.getElementById("measure_interval_minutes").value, 10) || 0;
+        const intervalS = Math.max(60, jours * 86400 + minutes * 60);
+
+        const capaciteMah     = parseFloat(document.getElementById("batt_capacity_mah").value) || 0;
+        const activeMa        = parseFloat(document.getElementById("batt_active_ma").value) || 0;
+        const activeS         = parseFloat(document.getElementById("batt_active_s").value) || 0;
+        const veilleUa        = parseFloat(document.getElementById("batt_sleep_ua").value) || 0;
+        const autodechargePct = parseFloat(document.getElementById("batt_selfdischarge_pct").value) || 0;
+
+        if (capaciteMah <= 0) {
+            resultEl.textContent = "-";
+            return;
+        }
+
+        const cyclesParJour           = 86400 / intervalS;
+        const chargeActiveParCycle    = (activeMa * activeS) / 3600;
+        const tempsVeilleParCycleS    = Math.max(0, intervalS - activeS);
+        const chargeVeilleParCycle    = (veilleUa / 1000) * tempsVeilleParCycleS / 3600;
+        const chargeParCycleMah       = chargeActiveParCycle + chargeVeilleParCycle;
+
+        const consoMesuresJourMah = chargeParCycleMah * cyclesParJour;
+        const autodechargeJourMah = capaciteMah * (autodechargePct / 100) / 30;
+        const consoTotaleJourMah  = consoMesuresJourMah + autodechargeJourMah;
+
+        if (consoTotaleJourMah <= 0) {
+            resultEl.textContent = "-";
+            return;
+        }
+
+        const autonomieJours = capaciteMah / consoTotaleJourMah;
+        const nbCycles        = autonomieJours * cyclesParJour;
+
+        resultEl.innerHTML =
+            "≈ " + Math.round(nbCycles).toLocaleString('fr-FR') + " mesures possibles<br>" +
+            "≈ " + Math.round(autonomieJours).toLocaleString('fr-FR') + " jours" +
+            " (" + (autonomieJours / 30).toFixed(1) + " mois / " + (autonomieJours / 365).toFixed(2) + " ans)";
     }
+
+    ["measure_interval_days", "measure_interval_minutes", "batt_capacity_mah", "batt_active_ma",
+     "batt_active_s", "batt_sleep_ua", "batt_selfdischarge_pct"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("input", calcAutonomie);
+    });
+    calcAutonomie();
 
     const archivesHeader = document.getElementById("toggle-archives");
     const archivesBody   = document.getElementById("archives-body");

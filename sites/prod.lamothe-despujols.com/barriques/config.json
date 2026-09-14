@@ -1,6 +1,5 @@
 {
-    "measure_interval_s": 86400,
-    "maintenance": true,
-    "test_mode": false,
-    "measure_interval_days": 1
+    "measure_interval_s": 604800,
+    "measure_interval_days": 7,
+    "measure_interval_minutes": 0
 }

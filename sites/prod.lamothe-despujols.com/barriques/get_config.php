@@ -7,8 +7,6 @@ $configFile = __DIR__ . '/config.json';
 // Valeurs par défaut si le JSON est absent ou cassé
 $default = [
     'measure_interval_s' => 600,   // 10 minutes par défaut
-    'maintenance'        => true,  // mode maintenance actif par défaut
-    'test_mode'          => false  // test deep-sleep désactivé par défaut
 ];
 
 // Si le fichier n'existe pas -> on renvoie les valeurs par défaut
