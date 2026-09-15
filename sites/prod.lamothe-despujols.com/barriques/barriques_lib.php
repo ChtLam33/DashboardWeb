@@ -8,6 +8,14 @@ function barriquesDbPath(): string {
     return __DIR__ . '/barriques.sqlite';
 }
 
+function backupDir(): string {
+    $dir = __DIR__ . '/backup_barriques';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    return $dir;
+}
+
 /* =========================================================
    SQLITE
    - Phase 1 (sept. 2026) : mesures (ex logs/barriques.log).
@@ -196,6 +204,122 @@ function getAllMeasurementRows(): array {
         'SELECT date_iso, sensor_id AS id, raw, battery_mv AS batt, rssi, fw, ts FROM mesures ORDER BY id ASC'
     );
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/* =========================================================
+   SAUVEGARDES (backup_barriques/)
+   - Pas de declenchement manuel par l'utilisateur : verification
+     opportuniste a chaque chargement du dashboard (voir
+     maybeRunScheduledBackup(), appelee depuis index.php). Pas
+     besoin de configurer un vrai cron sur l'hebergement.
+   - Restauration disponible depuis le dashboard, limitee aux
+     sauvegardes existantes (voir listAvailableBackups()).
+   ========================================================= */
+
+/**
+ * Cree une nouvelle sauvegarde consistante de barriques.sqlite via
+ * VACUUM INTO (capture propre meme en mode WAL, contrairement a une
+ * simple copie de fichier), puis supprime les plus anciennes au-dela
+ * de 3. Retourne le nom du fichier cree.
+ */
+function createBackupNow(): string {
+    $pdo = dbConnect();
+    $filename = 'barriques_' . date('Y-m-d_His') . '.sqlite';
+    $targetPath = backupDir() . '/' . $filename;
+
+    $escapedPath = str_replace("'", "''", $targetPath);
+    $pdo->exec("VACUUM INTO '{$escapedPath}'");
+
+    setSetting('last_sqlite_backup_ts', (string)time());
+
+    $backups = listAvailableBackups();
+    if (count($backups) > 3) {
+        foreach (array_slice($backups, 3) as $old) {
+            @unlink(backupDir() . '/' . $old['filename']);
+        }
+    }
+
+    return $filename;
+}
+
+/**
+ * A appeler sur les pages consultees regulierement (index.php) :
+ * declenche une sauvegarde si la derniere date de plus de 30 jours
+ * (ou s'il n'y en a jamais eu). Remplace un vrai cron - inutile de
+ * configurer quoi que ce soit sur l'hebergement.
+ */
+function maybeRunScheduledBackup(): void {
+    $lastTs = (int)getSetting('last_sqlite_backup_ts', '0');
+    $intervalS = 30 * 86400;
+    if ($lastTs > 0 && (time() - $lastTs) < $intervalS) {
+        return;
+    }
+    try {
+        createBackupNow();
+    } catch (\Throwable $e) {
+        error_log('[barriques] maybeRunScheduledBackup failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Liste les sauvegardes disponibles, les plus recentes en premier :
+ * [ ['filename'=>..., 'ts'=>..., 'label'=>'15/09/2026 22:10'], ... ]
+ */
+function listAvailableBackups(): array {
+    $files = glob(backupDir() . '/barriques_*.sqlite') ?: [];
+    $out = [];
+    foreach ($files as $path) {
+        $out[] = [
+            'filename' => basename($path),
+            'ts'       => filemtime($path) ?: 0,
+        ];
+    }
+    usort($out, fn($a, $b) => $b['ts'] <=> $a['ts']);
+    foreach ($out as &$b) {
+        $b['label'] = date('d/m/Y H:i', $b['ts']);
+    }
+    unset($b);
+    return $out;
+}
+
+/**
+ * Restaure une sauvegarde par son nom de fichier (doit exister dans
+ * backup_barriques/, aucune autre valeur acceptee - basename() empeche
+ * toute tentative de path traversal). Sauvegarde l'etat courant avant
+ * d'ecraser, pour pouvoir annuler une restauration.
+ *
+ * IMPORTANT : ne doit etre appelee qu'avant toute autre utilisation de
+ * dbConnect() dans la requete en cours (voir index.php), pour ne pas
+ * remplacer le fichier pendant qu'une connexion PDO y est deja ouverte.
+ */
+function restoreBackup(string $filename): bool {
+    $filename = basename($filename);
+    $sourcePath = backupDir() . '/' . $filename;
+    if (!is_file($sourcePath)) {
+        return false;
+    }
+
+    // Filet de securite : sauvegarder l'etat actuel avant d'ecraser
+    try {
+        createBackupNow();
+    } catch (\Throwable $e) {
+        error_log('[barriques] pre-restore backup failed: ' . $e->getMessage());
+    }
+
+    $dbPath = barriquesDbPath();
+
+    // Le fichier restaure ne doit heriter d'aucun WAL/SHM perime
+    @unlink($dbPath . '-wal');
+    @unlink($dbPath . '-shm');
+
+    if (!copy($sourcePath, $dbPath)) {
+        return false;
+    }
+
+    @unlink($dbPath . '-wal');
+    @unlink($dbPath . '-shm');
+
+    return true;
 }
 
 /* =========================================================

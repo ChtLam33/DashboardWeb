@@ -1,4 +1,7 @@
-# Empeche le telechargement direct de la base SQLite
+# Empeche le telechargement direct de la base SQLite (et des sauvegardes, meme regle en cascade sur backup_barriques/)
 <FilesMatch "\.sqlite(-wal|-shm)?$">
     Require all denied
 </FilesMatch>
+
+# Empeche le listing du contenu des dossiers (ex: backup_barriques/) si aucun index n'est present
+Options -Indexes

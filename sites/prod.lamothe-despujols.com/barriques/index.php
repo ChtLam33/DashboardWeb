@@ -2,6 +2,17 @@
 require __DIR__ . '/barriques_lib.php';
 
 /* =========================================================
+   0) RESTAURATION D'UNE SAUVEGARDE
+   - Traite AVANT toute autre section : aucune connexion PDO ne doit
+     etre ouverte sur barriques.sqlite avant qu'on le remplace.
+   ========================================================= */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['restore_backup'])) {
+    restoreBackup((string)$_POST['restore_backup']);
+    header('Location: index.php');
+    exit;
+}
+
+/* =========================================================
    1) CONFIG LOTS (par capteur)
    ========================================================= */
 $configLots = loadLotsConfig(); // id => ['lot'=>..., 'barriques'=>...]
@@ -108,6 +119,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 }
+
+/* =========================================================
+   Sauvegarde automatique (opportuniste, pas de cron necessaire)
+   ========================================================= */
+maybeRunScheduledBackup();
 
 /* =========================================================
    4) LECTURE LOG (dernière mesure par capteur + lignes brutes)
@@ -625,6 +641,8 @@ $modeBanner = implode(' • ', $modeParts);
         .back-link{text-decoration:none;font-size:22px;line-height:1;color:var(--text-main);}
         .back-link:hover{color:var(--accent);}
         .icon-btn{background:transparent;border:none;cursor:pointer;font-size:1.3rem;padding:.2rem .4rem;color:var(--accent);}
+        .restore-btn{display:block;width:100%;text-align:left;background:#0b0e13;border:1px solid #444;border-radius:4px;color:#f5f5f5;padding:6px 8px;margin-bottom:6px;cursor:pointer;font-size:.85rem;}
+        .restore-btn:hover{border-color:#f3d26b;color:#f3d26b;}
         .icon-btn:hover{transform:scale(1.08);}
 
         /* BANNIÈRE MODE */
@@ -1079,6 +1097,22 @@ $modeBanner = implode(' • ', $modeParts);
                 <button type="submit" class="icon-btn">💾</button>
             </div>
         </form>
+
+        <fieldset>
+            <legend>Restaurer une sauvegarde</legend>
+            <?php $availableBackups = listAvailableBackups(); ?>
+            <?php if (empty($availableBackups)): ?>
+                <div class="settings-row small">Aucune sauvegarde disponible pour l'instant (la première sera créée automatiquement).</div>
+            <?php else: ?>
+                <?php foreach ($availableBackups as $b): ?>
+                    <form method="post" action="index.php"
+                          onsubmit="return confirm('Restaurer la sauvegarde du <?php echo htmlspecialchars($b['label'], ENT_QUOTES, 'UTF-8'); ?> ?\nTout ce qui a été enregistré après cette date sera perdu (une sauvegarde de l\'état actuel sera prise avant, au cas où).');">
+                        <input type="hidden" name="restore_backup" value="<?php echo htmlspecialchars($b['filename'], ENT_QUOTES, 'UTF-8'); ?>">
+                        <button type="submit" class="restore-btn">Restaurer — <?php echo htmlspecialchars($b['label'], ENT_QUOTES, 'UTF-8'); ?></button>
+                    </form>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </fieldset>
     </div>
 </div>
 
