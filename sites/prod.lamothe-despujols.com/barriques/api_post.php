@@ -48,6 +48,7 @@ $value_raw  = $data['value_raw']  ?? null;
 $rssi       = $data['rssi']       ?? null;
 $battery_mv = $data['battery_mv'] ?? null;
 $ts         = $data['ts']         ?? 0;
+$sleep_s    = $data['sleep_s']    ?? null; // firmware >= 2.0.1 seulement
 
 if ($id === null || $value_raw === null) {
     http_response_code(400);
@@ -67,16 +68,17 @@ if (!is_dir($logDir)) {
 // Fichier unique pour toutes les mesures, toutes les dates
 $logFile = $logDir . '/barriques.log';
 
-// Une ligne = TSV : date_iso, id, raw, batt_mV, rssi, fw, ts
+// Une ligne = TSV : date_iso, id, raw, batt_mV, rssi, fw, ts, sleep_s
 $line = sprintf(
-    "%s\t%s\t%s\t%s\t%s\t%s\t%s" . PHP_EOL,
+    "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" . PHP_EOL,
     date('c'),
     $id,
     $value_raw,
     $battery_mv,
     $rssi,
     $fw,
-    $ts
+    $ts,
+    $sleep_s
 );
 
 file_put_contents($logFile, $line, FILE_APPEND);
@@ -91,7 +93,8 @@ try {
         ($battery_mv === null ? null : (int)$battery_mv),
         ($rssi === null ? null : (int)$rssi),
         ($fw === null ? null : (string)$fw),
-        (int)$ts
+        (int)$ts,
+        ($sleep_s === null ? null : (int)$sleep_s)
     );
 } catch (\Throwable $e) {
     // Ne bloque jamais la reponse au capteur : le log texte suffit si SQLite echoue.

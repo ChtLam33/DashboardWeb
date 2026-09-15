@@ -41,6 +41,14 @@ function dbConnect(): PDO {
         )');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mesures_sensor_ts ON mesures(sensor_id, ts)');
 
+        // v2.0.1 firmware : duree de deep sleep (s) utilisee par CE cycle de
+        // mesure, pour calculer une date de prochain reveil fiable par capteur.
+        // Ajoutee via ALTER TABLE (colonne absente sur les bases creees avant).
+        $mesuresCols = $pdo->query('PRAGMA table_info(mesures)')->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (!in_array('sleep_s', $mesuresCols, true)) {
+            $pdo->exec('ALTER TABLE mesures ADD COLUMN sleep_s INTEGER');
+        }
+
         $pdo->exec('CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -184,26 +192,45 @@ function addPushSubscriptionIfNew(array $sub): void {
     $stmt->execute([$endpoint, $p256dh, $auth, $expiry]);
 }
 
-function insertMeasurement(string $sensorId, string $dateIso, int $raw, ?int $batteryMv, ?int $rssi, ?string $fw, int $ts): void {
+function insertMeasurement(string $sensorId, string $dateIso, int $raw, ?int $batteryMv, ?int $rssi, ?string $fw, int $ts, ?int $sleepS = null): void {
     $pdo = dbConnect();
     $stmt = $pdo->prepare(
-        'INSERT INTO mesures (sensor_id, date_iso, raw, battery_mv, rssi, fw, ts) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO mesures (sensor_id, date_iso, raw, battery_mv, rssi, fw, ts, sleep_s) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    $stmt->execute([$sensorId, $dateIso, $raw, $batteryMv, $rssi, $fw, $ts]);
+    $stmt->execute([$sensorId, $dateIso, $raw, $batteryMv, $rssi, $fw, $ts, $sleepS]);
 }
 
 /**
  * Toutes les mesures, dans l'ordre d'insertion (equivalent a l'ordre
  * d'origine du fichier log). Meme forme que les anciennes lignes TSV
  * parsees : ['date_iso'=>..., 'id'=>..., 'raw'=>..., 'batt'=>...,
- * 'rssi'=>..., 'fw'=>..., 'ts'=>...]
+ * 'rssi'=>..., 'fw'=>..., 'ts'=>..., 'sleep_s'=>...]
+ * 'sleep_s' est NULL pour les mesures d'avant le firmware 2.0.1.
  */
 function getAllMeasurementRows(): array {
     $pdo = dbConnect();
     $stmt = $pdo->query(
-        'SELECT date_iso, sensor_id AS id, raw, battery_mv AS batt, rssi, fw, ts FROM mesures ORDER BY id ASC'
+        'SELECT date_iso, sensor_id AS id, raw, battery_mv AS batt, rssi, fw, ts, sleep_s FROM mesures ORDER BY id ASC'
     );
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Estimation de la prochaine mesure attendue pour un capteur, a partir de sa
+ * DERNIERE ligne connue (celle qui contient son propre sleep_s - fiable meme
+ * si le reglage serveur a change depuis). Retourne null si sleep_s est
+ * inconnu (mesure d'avant le firmware 2.0.1).
+ */
+function estimateNextWakeTs(array $lastRow): ?int {
+    if (!isset($lastRow['sleep_s']) || $lastRow['sleep_s'] === null) {
+        return null;
+    }
+    $ts = (int)($lastRow['ts'] ?? 0);
+    $sleepS = (int)$lastRow['sleep_s'];
+    if ($ts <= 0 || $sleepS <= 0) {
+        return null;
+    }
+    return $ts + $sleepS;
 }
 
 /* =========================================================

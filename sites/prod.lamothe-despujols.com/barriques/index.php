@@ -143,6 +143,7 @@ foreach ($measurementRows as $row) {
         'rssi'     => (int)($row['rssi'] ?? 0),
         'fw'       => trim((string)($row['fw'] ?? '')),
         'ts'       => (int)($row['ts'] ?? 0),
+        'sleep_s'  => isset($row['sleep_s']) ? $row['sleep_s'] : null,
     ];
 }
 ksort($capteurs);
@@ -713,16 +714,18 @@ $modeBanner = implode(' • ', $modeParts);
         .section-title{font-size:15px;font-weight:500;margin:0;color:var(--accent);letter-spacing:.03em;}
 
         .settings-panel{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:999;}
-        .settings-content{background:#111;border:1px solid #444;border-radius:8px;padding:1.5rem;min-width:260px;max-width:360px;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;color:#f5f5f5;box-shadow:0 0 20px rgba(0,0,0,.6);}
+        #restore-modal{z-index:1000;}
+        .settings-content{background:#111;border:1px solid #444;border-radius:8px;min-width:260px;max-width:360px;max-height:85vh;color:#f5f5f5;box-shadow:0 0 20px rgba(0,0,0,.6);display:flex;flex-direction:column;}
+        .settings-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:1.5rem 1.5rem 0 1.5rem;}
+        .settings-footer{flex-shrink:0;padding:.8rem 1.5rem 1.2rem 1.5rem;border-top:1px solid #333;text-align:right;margin-top:.5rem;}
         .info-icon{display:inline-block;cursor:pointer;color:var(--text-muted);border:1px solid #444;border-radius:50%;width:16px;height:16px;line-height:15px;text-align:center;font-size:11px;font-style:italic;user-select:none;}
         .info-icon:hover, .info-icon:focus{color:#f3d26b;border-color:#f3d26b;}
         .settings-content h2{margin-top:0;margin-bottom:1rem;font-size:1.2rem;color:#f3d26b;}
         .settings-content fieldset{border:1px solid #333;padding:.8rem;margin-bottom:.8rem;}
         .settings-content legend{padding:0 .4rem;}
-        .settings-actions{margin-top:1rem;text-align:right;}
-        .settings-actions .icon-btn{font-size:1rem;}
-        .settings-actions .icon-btn:first-child{color:var(--text-muted);}
-        .settings-actions .icon-btn:last-child{color:var(--accent);}
+        .settings-footer .icon-btn{font-size:1rem;}
+        .settings-footer .icon-btn:first-child{color:var(--text-muted);}
+        .settings-footer .icon-btn:last-child{color:var(--accent);}
         .settings-row{margin-top:.6rem;font-size:.9rem;}
         .settings-row label{display:block;margin-bottom:.25rem;}
         .settings-row input[type="number"], .settings-row select{width:100%;padding:4px 6px;border-radius:4px;border:1px solid #444;background:#0b0e13;color:#f5f5f5;font-size:.9rem;}
@@ -788,7 +791,7 @@ $modeBanner = implode(' • ', $modeParts);
                             <th>RAW</th>
                             <th>RSSI</th>
                             <th>Batterie</th>
-                            <th>Dernière mesure</th>
+                            <th>Dernière mesure (xJ) <span class="info-icon" title="(xJ) = nombre de jours avant la prochaine mesure attendue pour ce capteur">i</span></th>
                             <th>FW</th>
                             <th>Actions</th>
                         </tr>
@@ -811,6 +814,13 @@ $modeBanner = implode(' • ', $modeParts);
 
                             $tempAff = '-';
                             $dateAff = formatDateFr($info['date_iso']);
+
+                            $nextWakeTs = estimateNextWakeTs($info);
+                            $nextWakeLabel = '';
+                            if ($nextWakeTs !== null) {
+                                $daysLeft = (int)round(($nextWakeTs - time()) / 86400);
+                                $nextWakeLabel = ' (' . $daysLeft . 'J)';
+                            }
 
                             $inactive = isCapteurInactive((int)$info['ts'], $inactiveMeasureDays, $inactiveGraceDays);
                             $rssiClassStr = rssiClass($info['rssi']);
@@ -866,7 +876,7 @@ $modeBanner = implode(' • ', $modeParts);
                                 <td><?php echo $batteryHtml; ?></td>
 
                                 <td class="small<?php echo $inactive ? ' inactive' : ''; ?>">
-                                    <?php echo htmlspecialchars($dateAff, ENT_QUOTES, 'UTF-8'); ?>
+                                    <?php echo htmlspecialchars($dateAff . $nextWakeLabel, ENT_QUOTES, 'UTF-8'); ?>
                                 </td>
 
                                 <td class="small"><?php echo htmlspecialchars((string)$info['fw'], ENT_QUOTES, 'UTF-8'); ?></td>
@@ -1033,9 +1043,10 @@ $modeBanner = implode(' • ', $modeParts);
 <!-- Panneau paramètres -->
 <div id="settings-panel" class="settings-panel">
     <div class="settings-content">
+    <div class="settings-scroll">
         <h2>Paramètres</h2>
 
-        <form method="post" action="save_notifications_config.php">
+        <form id="settings-form" method="post" action="save_notifications_config.php">
             <fieldset>
                 <legend>Notifications</legend>
 
@@ -1092,27 +1103,40 @@ $modeBanner = implode(' • ', $modeParts);
                 </div>
             </fieldset>
 
-            <div class="settings-actions">
-                <button type="button" id="close-settings" class="icon-btn">✖</button>
-                <button type="submit" class="icon-btn">💾</button>
-            </div>
+            <fieldset>
+                <legend>Sauvegardes</legend>
+                <button type="button" id="open-restore-modal" class="restore-btn">Restaurer une sauvegarde…</button>
+            </fieldset>
         </form>
+    </div>
+    <div class="settings-footer">
+        <button type="button" id="close-settings" class="icon-btn">✖</button>
+        <button type="submit" form="settings-form" class="icon-btn">💾</button>
+    </div>
+    </div>
+</div>
 
-        <fieldset>
-            <legend>Restaurer une sauvegarde</legend>
-            <?php $availableBackups = listAvailableBackups(); ?>
-            <?php if (empty($availableBackups)): ?>
-                <div class="settings-row small">Aucune sauvegarde disponible pour l'instant (la première sera créée automatiquement).</div>
-            <?php else: ?>
-                <?php foreach ($availableBackups as $b): ?>
-                    <form method="post" action="index.php"
-                          onsubmit="return confirm('Restaurer la sauvegarde du <?php echo htmlspecialchars($b['label'], ENT_QUOTES, 'UTF-8'); ?> ?\nTout ce qui a été enregistré après cette date sera perdu (une sauvegarde de l\'état actuel sera prise avant, au cas où).');">
-                        <input type="hidden" name="restore_backup" value="<?php echo htmlspecialchars($b['filename'], ENT_QUOTES, 'UTF-8'); ?>">
-                        <button type="submit" class="restore-btn">Restaurer — <?php echo htmlspecialchars($b['label'], ENT_QUOTES, 'UTF-8'); ?></button>
-                    </form>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </fieldset>
+<!-- Popup choix de la sauvegarde a restaurer -->
+<div id="restore-modal" class="settings-panel">
+    <div class="settings-content" style="max-height:60vh;">
+    <div class="settings-scroll">
+        <h2>Restaurer une sauvegarde</h2>
+        <?php $availableBackups = listAvailableBackups(); ?>
+        <?php if (empty($availableBackups)): ?>
+            <div class="settings-row small">Aucune sauvegarde disponible pour l'instant (la première sera créée automatiquement).</div>
+        <?php else: ?>
+            <?php foreach ($availableBackups as $b): ?>
+                <form method="post" action="index.php"
+                      onsubmit="return confirm('Restaurer la sauvegarde du <?php echo htmlspecialchars($b['label'], ENT_QUOTES, 'UTF-8'); ?> ?\nTout ce qui a été enregistré après cette date sera perdu (une sauvegarde de l\'état actuel sera prise avant, au cas où).');">
+                    <input type="hidden" name="restore_backup" value="<?php echo htmlspecialchars($b['filename'], ENT_QUOTES, 'UTF-8'); ?>">
+                    <button type="submit" class="restore-btn">Restaurer — <?php echo htmlspecialchars($b['label'], ENT_QUOTES, 'UTF-8'); ?></button>
+                </form>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+    <div class="settings-footer">
+        <button type="button" id="close-restore-modal" class="icon-btn">✖</button>
+    </div>
     </div>
 </div>
 
@@ -1124,6 +1148,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (openSettings && settingsPanel) openSettings.addEventListener("click", () => settingsPanel.style.display="flex");
     if (closeSettings && settingsPanel) closeSettings.addEventListener("click", () => settingsPanel.style.display="none");
+
+    const openRestore = document.getElementById("open-restore-modal");
+    const restoreModal = document.getElementById("restore-modal");
+    const closeRestore = document.getElementById("close-restore-modal");
+
+    if (openRestore && restoreModal) openRestore.addEventListener("click", () => restoreModal.style.display="flex");
+    if (closeRestore && restoreModal) closeRestore.addEventListener("click", () => restoreModal.style.display="none");
 
     function calcAutonomie() {
         const resultEl = document.getElementById("autonomie-result");
