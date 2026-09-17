@@ -743,6 +743,7 @@ $modeBanner = implode(' • ', $modeParts);
         <div class="topbar-actions">
             <button class="icon-btn" id="notify-btn" title="Activer les notifications">🔔</button>
             <button class="icon-btn" id="open-settings" title="Paramètres">⚙️</button>
+            <a href="/auth/logout.php" class="icon-btn" title="Déconnexion (<?php echo htmlspecialchars((string)getLoggedInEmail(), ENT_QUOTES, 'UTF-8'); ?>)">🔓</a>
         </div>
     </div>
 

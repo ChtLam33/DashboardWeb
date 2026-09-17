@@ -2,3 +2,4 @@ desktop.ini
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+secrets.local.php

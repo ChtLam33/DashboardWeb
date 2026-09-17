@@ -1,3 +1,6 @@
+<?php
+// Protection assuree automatiquement par auth/auto_protect.php (voir .user.ini)
+?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -346,7 +349,7 @@
     </main>
 
     <footer class="footer">
-      <span>Interface interne – non destinée au public.</span>
+      <span>Connecté : <?php echo htmlspecialchars((string)getLoggedInEmail(), ENT_QUOTES, 'UTF-8'); ?> — <a href="/auth/logout.php">Se déconnecter</a></span>
       <span>
         Hébergement : <a href="https://ecologie.infomaniak.com/" target="_blank" rel="noopener noreferrer">
         datacenter écologique Infomaniak</a>
