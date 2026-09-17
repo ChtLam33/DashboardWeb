@@ -1,0 +1,66 @@
+[
+    {
+        "id": "seed01",
+        "categorie": "Firmware barriques (prochaine mise à jour)",
+        "titre": "Clé API par capteur",
+        "description": "Auto-enregistrement à la première connexion (le capteur envoie son numéro, le serveur génère une clé secrète et la renvoie, stockée dans la mémoire du capteur comme le Wi-Fi) — pas de saisie manuelle. Nécessite un code partagé unique pour toute l'installation, gravé dans le firmware, pour autoriser cette première inscription.",
+        "source": "identifie",
+        "date": "2026-09-17"
+    },
+    {
+        "id": "seed02",
+        "categorie": "Firmware barriques (prochaine mise à jour)",
+        "titre": "Architecture dossier/nom uniformisée des fichiers capteurs",
+        "description": "Aujourd'hui les fichiers capteurs n'ont pas de nom cohérent entre barriques et cuves. Regrouper sous une convention commune pour que la protection Google reconnaisse automatiquement la famille des fichiers capteurs, sans liste à mettre à jour à la main.",
+        "source": "identifie",
+        "date": "2026-09-17"
+    },
+    {
+        "id": "seed03",
+        "categorie": "Firmware barriques (prochaine mise à jour)",
+        "titre": "Validation du certificat HTTPS par le firmware",
+        "description": "Le firmware fait actuellement confiance au serveur sans vérifier son certificat. À corriger via l'autorité de certification (Let's Encrypt) plutôt qu'un pinning de l'empreinte exacte, qui expirerait à chaque renouvellement (tous les 90 jours).",
+        "source": "identifie",
+        "date": "2026-09-17"
+    },
+    {
+        "id": "seed04",
+        "categorie": "Cuves",
+        "titre": "Harmoniser le calcul de volume côté serveur",
+        "description": "Le firmware cuves calcule lui-même le volume en HL et l'envoie déjà calculé, contrairement à barriques où le serveur fait toute l'interprétation. À corriger : le capteur cuve n'enverrait plus que la distance brute.",
+        "source": "identifie",
+        "date": "2026-09-18"
+    },
+    {
+        "id": "seed05",
+        "categorie": "Cuves",
+        "titre": "Migration SQLite côté cuves",
+        "description": "Réglerait l'absence d'historique cuves et les écritures non protégées. Ne nécessite pas de modification firmware. En attente d'un feu vert explicite avant de commencer.",
+        "source": "identifie",
+        "date": "2026-09-14"
+    },
+    {
+        "id": "seed06",
+        "categorie": "Nettoyage (barriques)",
+        "titre": "Retirer la double écriture log texte + SQLite",
+        "description": "Filet de sécurité mis en place pendant la migration SQLite, à retirer une fois assez de recul sur la fiabilité en conditions réelles (plusieurs semaines/mois sans souci). Aucune urgence.",
+        "source": "identifie",
+        "date": "2026-09-14"
+    },
+    {
+        "id": "seed07",
+        "categorie": "Idées à explorer",
+        "titre": "Compteur de mesures empirique pour l'autonomie batterie",
+        "description": "Suivre réellement combien de mesures une pile pleine a tenu, plutôt qu'une formule théorique.",
+        "source": "identifie",
+        "date": "2026-09-14"
+    },
+    {
+        "id": "seed08",
+        "categorie": "Idées à explorer",
+        "titre": "Tampon local anti-coupure Wi-Fi",
+        "description": "Inspiré de BrewBrain Float Pro : stocker en mémoire les mesures qui échouent à s'envoyer, les renvoyer au prochain réveil réussi au lieu de les perdre. Nécessite une modification firmware.",
+        "source": "identifie",
+        "date": "2026-09-15"
+    }
+]

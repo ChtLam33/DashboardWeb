@@ -1,4 +1,6 @@
 <?php
+require __DIR__ . '/../shared/roadmap_lib.php';
+
 // --- Lecture du CACHE JSON ---
 $cacheFile   = __DIR__ . "/cache_dashboard.json";
 $configFile  = __DIR__ . "/config_cuves.json";
@@ -477,6 +479,24 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   padding:3px 4px;
   border-bottom:1px solid #2a2a2a;
 }
+
+.roadmap-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:1000;}
+.roadmap-content{background:#111;border:1px solid #444;border-radius:8px;min-width:280px;max-width:520px;width:92%;max-height:85vh;color:#ddd;box-shadow:0 0 20px rgba(0,0,0,.6);display:flex;flex-direction:column;}
+.roadmap-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:1.2rem 1.2rem 0 1.2rem;}
+.roadmap-footer{flex-shrink:0;padding:.8rem 1.2rem 1.2rem 1.2rem;border-top:1px solid #333;text-align:right;}
+.roadmap-content h2{margin:0 0 .8rem 0;font-size:1.15rem;color:#f3d26b;}
+.roadmap-content h3{margin:1rem 0 .4rem 0;font-size:.85rem;color:#f3d26b;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #333;padding-bottom:.3rem;}
+.roadmap-item{border-left:3px solid #444;padding:.3rem .6rem;margin-bottom:.6rem;font-size:.85rem;}
+.roadmap-item .titre{font-weight:600;}
+.roadmap-item .desc{color:#9aa0a6;font-size:.8rem;margin-top:.2rem;line-height:1.4;}
+.roadmap-item.manuel{border-left-color:#f3d26b;background:rgba(243,210,107,0.06);}
+.roadmap-item .date{color:#6b7280;font-size:.72rem;margin-top:.3rem;}
+.roadmap-form{margin-top:.8rem;display:flex;flex-direction:column;gap:6px;}
+.roadmap-form input, .roadmap-form textarea{background:#0b0e13;border:1px solid #444;border-radius:4px;color:#ddd;padding:6px 8px;font-size:.85rem;font-family:inherit;}
+.roadmap-form textarea{min-height:50px;resize:vertical;}
+.roadmap-form button{align-self:flex-end;background:#f3d26b;border:none;border-radius:4px;color:#111;padding:6px 14px;font-size:.85rem;cursor:pointer;font-weight:600;}
+.roadmap-empty{color:#9aa0a6;font-size:.85rem;}
+.roadmap-footer button{background:transparent;border:none;color:#9aa0a6;font-size:1.2rem;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -489,6 +509,7 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   <div class="actions">
     <button onclick="refreshData()">🔄 Actualiser</button>
     <button onclick="purgeSensors()" title="Supprimer les capteurs hors ligne (ils seront réinitialisés)">🧹 Purger</button>
+    <button onclick="document.getElementById('roadmap-modal').style.display='flex'" title="Chantiers en cours et à venir">🚧 Chantiers</button>
     <button onclick="showParamPopup()">⚙️ Paramètres</button>
   </div>
 </header>
@@ -1103,5 +1124,53 @@ function initHistoryToggle(){
 initDragAndDrop();
 initHistoryToggle();
 </script>
+
+<!-- Popup chantiers en cours et a venir -->
+<?php $roadmap = getRoadmapGrouped(); ?>
+<div id="roadmap-modal" class="roadmap-modal">
+    <div class="roadmap-content">
+    <div class="roadmap-scroll">
+        <h2>🚧 Chantiers en cours et à venir</h2>
+        <?php if (empty($roadmap['categories']) && empty($roadmap['manuel'])): ?>
+            <div class="roadmap-empty">Rien pour l'instant.</div>
+        <?php endif; ?>
+        <?php foreach ($roadmap['categories'] as $cat => $items): ?>
+            <h3><?php echo htmlspecialchars($cat, ENT_QUOTES, 'UTF-8'); ?></h3>
+            <?php foreach ($items as $item): ?>
+                <div class="roadmap-item">
+                    <div class="titre"><?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <?php if (!empty($item['description'])): ?>
+                        <div class="desc"><?php echo nl2br(htmlspecialchars((string)$item['description'], ENT_QUOTES, 'UTF-8')); ?></div>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+        <?php endforeach; ?>
+
+        <?php if (!empty($roadmap['manuel'])): ?>
+            <h3>Ajouts manuels</h3>
+            <?php foreach ($roadmap['manuel'] as $item): ?>
+                <div class="roadmap-item manuel">
+                    <div class="titre"><?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <?php if (!empty($item['description'])): ?>
+                        <div class="desc"><?php echo nl2br(htmlspecialchars((string)$item['description'], ENT_QUOTES, 'UTF-8')); ?></div>
+                    <?php endif; ?>
+                    <div class="date">Ajouté le <?php echo htmlspecialchars((string)($item['date'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+
+        <h3>Ajouter une idée</h3>
+        <form class="roadmap-form" method="post" action="/shared/roadmap_add.php">
+            <input type="hidden" name="redirect" value="/cuves/index.php">
+            <input type="text" name="titre" placeholder="Titre" required maxlength="200">
+            <textarea name="description" placeholder="Détails (optionnel)"></textarea>
+            <button type="submit">Ajouter</button>
+        </form>
+    </div>
+    <div class="roadmap-footer">
+        <button type="button" onclick="document.getElementById('roadmap-modal').style.display='none'">✖</button>
+    </div>
+    </div>
+</div>
 </body>
 </html>

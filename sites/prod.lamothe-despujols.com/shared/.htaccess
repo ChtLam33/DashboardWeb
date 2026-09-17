@@ -1,0 +1,5 @@
+# Empeche le telechargement direct des fichiers de donnees (les .json ne
+# passent pas par PHP, donc auto_protect.php ne s'applique pas a eux)
+<FilesMatch "\.json$">
+    Require all denied
+</FilesMatch>

@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/barriques_lib.php';
+require __DIR__ . '/../shared/roadmap_lib.php';
 
 /* =========================================================
    0) RESTAURATION D'UNE SAUVEGARDE
@@ -644,6 +645,23 @@ $modeBanner = implode(' • ', $modeParts);
         .icon-btn{background:transparent;border:none;cursor:pointer;font-size:1.3rem;padding:.2rem .4rem;color:var(--accent);}
         .restore-btn{display:block;width:100%;text-align:left;background:#0b0e13;border:1px solid #444;border-radius:4px;color:#f5f5f5;padding:6px 8px;margin-bottom:6px;cursor:pointer;font-size:.85rem;}
         .restore-btn:hover{border-color:#f3d26b;color:#f3d26b;}
+
+        .roadmap-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:1000;}
+        .roadmap-content{background:#111;border:1px solid #444;border-radius:8px;min-width:280px;max-width:520px;width:92%;max-height:85vh;color:#f5f5f5;box-shadow:0 0 20px rgba(0,0,0,.6);display:flex;flex-direction:column;}
+        .roadmap-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:1.2rem 1.2rem 0 1.2rem;}
+        .roadmap-footer{flex-shrink:0;padding:.8rem 1.2rem 1.2rem 1.2rem;border-top:1px solid #333;text-align:right;}
+        .roadmap-content h2{margin:0 0 .8rem 0;font-size:1.15rem;color:#f3d26b;}
+        .roadmap-content h3{margin:1rem 0 .4rem 0;font-size:.85rem;color:#f3d26b;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #333;padding-bottom:.3rem;}
+        .roadmap-item{border-left:3px solid #444;padding:.3rem .6rem;margin-bottom:.6rem;font-size:.85rem;}
+        .roadmap-item .titre{font-weight:600;}
+        .roadmap-item .desc{color:#9ca3af;font-size:.8rem;margin-top:.2rem;line-height:1.4;}
+        .roadmap-item.manuel{border-left-color:#f3d26b;background:rgba(243,210,107,0.06);}
+        .roadmap-item .date{color:#6b7280;font-size:.72rem;margin-top:.3rem;}
+        .roadmap-form{margin-top:.8rem;display:flex;flex-direction:column;gap:6px;}
+        .roadmap-form input, .roadmap-form textarea{background:#0b0e13;border:1px solid #444;border-radius:4px;color:#f5f5f5;padding:6px 8px;font-size:.85rem;font-family:inherit;}
+        .roadmap-form textarea{min-height:50px;resize:vertical;}
+        .roadmap-form button{align-self:flex-end;background:#f3d26b;border:none;border-radius:4px;color:#111;padding:6px 14px;font-size:.85rem;cursor:pointer;font-weight:600;}
+        .roadmap-empty{color:#9ca3af;font-size:.85rem;}
         .icon-btn:hover{transform:scale(1.08);}
 
         /* BANNIÈRE MODE */
@@ -742,6 +760,7 @@ $modeBanner = implode(' • ', $modeParts);
         </div>
         <div class="topbar-actions">
             <button class="icon-btn" id="notify-btn" title="Activer les notifications">🔔</button>
+            <button class="icon-btn" id="open-roadmap" title="Chantiers en cours et à venir">🚧</button>
             <button class="icon-btn" id="open-settings" title="Paramètres">⚙️</button>
             <a href="/auth/logout.php" class="icon-btn" title="Déconnexion (<?php echo htmlspecialchars((string)getLoggedInEmail(), ENT_QUOTES, 'UTF-8'); ?>)">🔓</a>
         </div>
@@ -1141,6 +1160,54 @@ $modeBanner = implode(' • ', $modeParts);
     </div>
 </div>
 
+<!-- Popup chantiers en cours et a venir -->
+<?php $roadmap = getRoadmapGrouped(); ?>
+<div id="roadmap-modal" class="roadmap-modal">
+    <div class="roadmap-content">
+    <div class="roadmap-scroll">
+        <h2>🚧 Chantiers en cours et à venir</h2>
+        <?php if (empty($roadmap['categories']) && empty($roadmap['manuel'])): ?>
+            <div class="roadmap-empty">Rien pour l'instant.</div>
+        <?php endif; ?>
+        <?php foreach ($roadmap['categories'] as $cat => $items): ?>
+            <h3><?php echo htmlspecialchars($cat, ENT_QUOTES, 'UTF-8'); ?></h3>
+            <?php foreach ($items as $item): ?>
+                <div class="roadmap-item">
+                    <div class="titre"><?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <?php if (!empty($item['description'])): ?>
+                        <div class="desc"><?php echo nl2br(htmlspecialchars((string)$item['description'], ENT_QUOTES, 'UTF-8')); ?></div>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+        <?php endforeach; ?>
+
+        <?php if (!empty($roadmap['manuel'])): ?>
+            <h3>Ajouts manuels</h3>
+            <?php foreach ($roadmap['manuel'] as $item): ?>
+                <div class="roadmap-item manuel">
+                    <div class="titre"><?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <?php if (!empty($item['description'])): ?>
+                        <div class="desc"><?php echo nl2br(htmlspecialchars((string)$item['description'], ENT_QUOTES, 'UTF-8')); ?></div>
+                    <?php endif; ?>
+                    <div class="date">Ajouté le <?php echo htmlspecialchars((string)($item['date'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+
+        <h3>Ajouter une idée</h3>
+        <form class="roadmap-form" method="post" action="/shared/roadmap_add.php">
+            <input type="hidden" name="redirect" value="/barriques/">
+            <input type="text" name="titre" placeholder="Titre" required maxlength="200">
+            <textarea name="description" placeholder="Détails (optionnel)"></textarea>
+            <button type="submit">Ajouter</button>
+        </form>
+    </div>
+    <div class="roadmap-footer">
+        <button type="button" id="close-roadmap" class="icon-btn">✖</button>
+    </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener("DOMContentLoaded", () => {
     const openSettings = document.getElementById("open-settings");
@@ -1153,6 +1220,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const openRestore = document.getElementById("open-restore-modal");
     const restoreModal = document.getElementById("restore-modal");
     const closeRestore = document.getElementById("close-restore-modal");
+
+    const openRoadmap = document.getElementById("open-roadmap");
+    const roadmapModal = document.getElementById("roadmap-modal");
+    const closeRoadmap = document.getElementById("close-roadmap");
+    if (openRoadmap && roadmapModal) openRoadmap.addEventListener("click", () => roadmapModal.style.display = "flex");
+    if (closeRoadmap && roadmapModal) closeRoadmap.addEventListener("click", () => roadmapModal.style.display = "none");
 
     if (openRestore && restoreModal) openRestore.addEventListener("click", () => restoreModal.style.display="flex");
     if (closeRestore && restoreModal) closeRestore.addEventListener("click", () => restoreModal.style.display="none");
