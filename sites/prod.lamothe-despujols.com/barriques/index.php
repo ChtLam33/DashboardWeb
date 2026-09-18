@@ -609,6 +609,7 @@ $modeBanner = implode(' • ', $modeParts);
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dashboard barriques - Capteurs</title>
 
     <link rel="icon" type="image/svg+xml"
@@ -627,6 +628,27 @@ $modeBanner = implode(' • ', $modeParts);
             --table-row-hover:#202633;
         }
         *{box-sizing:border-box;}
+
+        /* Blocage du mode portrait sur smartphone : trop etroit pour ce
+           tableau dense (13 colonnes) - invite a tourner l'appareil plutot
+           que d'afficher un rendu inutilisable. Pas de blocage sur tablette
+           (portrait encore assez large pour rester lisible). */
+        .rotate-overlay{display:none;}
+        @media (max-width:700px) and (orientation:portrait){
+            body > *:not(.rotate-overlay){display:none !important;}
+            .rotate-overlay{
+                display:flex;
+                position:fixed;inset:0;z-index:99999;
+                flex-direction:column;align-items:center;justify-content:center;
+                background:var(--bg-page);color:var(--text-main);
+                text-align:center;padding:24px;
+                font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+            }
+            .rotate-overlay .icon{font-size:3rem;margin-bottom:1rem;animation:rotate-hint 1.6s ease-in-out infinite;}
+            .rotate-overlay p{color:var(--text-muted);font-size:.95rem;max-width:280px;line-height:1.5;}
+            @keyframes rotate-hint{0%,100%{transform:rotate(0deg);}50%{transform:rotate(90deg);}}
+        }
+
         body{
             font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
             background:radial-gradient(circle at top,#101318 0,#050608 45%,#000 100%);
@@ -751,6 +773,10 @@ $modeBanner = implode(' • ', $modeParts);
     </style>
 </head>
 <body>
+<div class="rotate-overlay">
+    <div class="icon">🔄</div>
+    <p>Tourne ton téléphone en mode paysage pour consulter le dashboard barriques — le tableau est trop dense pour l'écran en portrait.</p>
+</div>
 <div class="page">
 
     <div class="topbar">
