@@ -3,6 +3,7 @@
 // et ne garde que ceux qui sont encore "récents" dans data_cuves.csv
 
 header('Content-Type: application/json; charset=utf-8');
+require __DIR__ . '/lock_lib.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -23,8 +24,9 @@ $now = time();
 // ------------------------------------------------------------------
 $lastById = [];
 
-if (file_exists($csvFile)) {
-    $lines = file($csvFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+$csvContent = lockedRead($csvFile);
+if ($csvContent !== null && trim($csvContent) !== '') {
+    $lines = preg_split('/\r\n|\r|\n/', $csvContent, -1, PREG_SPLIT_NO_EMPTY);
 
     if ($lines) {
         // On suppose que la première ligne est l'en-tête "datetime;id;..."
@@ -74,30 +76,28 @@ foreach ($lastById as $id => $ts) {
 $removed = 0;
 
 if (file_exists($configFile)) {
-    $config = json_decode(file_get_contents($configFile), true);
-    if (!is_array($config)) {
-        $config = [];
-    }
+    lockedReadModifyWriteJson($configFile, function ($config) use ($onlineIds, $offlineIds, &$removed) {
+        if (!is_array($config)) {
+            $config = [];
+        }
 
-    $newConfig = [];
-    foreach ($config as $entry) {
-        $id = $entry['id'] ?? '';
+        $newConfig = [];
+        foreach ($config as $entry) {
+            $id = $entry['id'] ?? '';
 
-        if ($id && isset($onlineIds[$id])) {
-            // Capteur encore en ligne : on garde la config telle quelle
-            $newConfig[] = $entry;
-        } else {
-            // Hors ligne : on le considère comme supprimé
-            if ($id && isset($offlineIds[$id])) {
-                $removed++;
+            if ($id && isset($onlineIds[$id])) {
+                // Capteur encore en ligne : on garde la config telle quelle
+                $newConfig[] = $entry;
+            } else {
+                // Hors ligne : on le considère comme supprimé
+                if ($id && isset($offlineIds[$id])) {
+                    $removed++;
+                }
             }
         }
-    }
 
-    file_put_contents(
-        $configFile,
-        json_encode($newConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-    );
+        return $newConfig;
+    });
 }
 
 // ------------------------------------------------------------------
@@ -105,22 +105,15 @@ if (file_exists($configFile)) {
 //    encore en ligne (les autres perdent leurs mesures)
 // ------------------------------------------------------------------
 if (file_exists($csvFile)) {
-    $lines = file($csvFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    $newLines = [];
+    lockedReadModifyWriteText($csvFile, function ($content) use ($onlineIds) {
+        $lines = ($content === '') ? [] : preg_split('/\r\n|\r|\n/', $content, -1, PREG_SPLIT_NO_EMPTY);
+        $newLines = [];
 
-    // En-tête attendu
-    $header = "datetime;id;cuve;distance_cm;volume_hl;capacite_hl;pourcentage;correction;hauteur_plein_cm;hauteur_cuve_cm;rssi";
+        // En-tête attendu
+        $header = "datetime;id;cuve;distance_cm;volume_hl;capacite_hl;pourcentage;correction;hauteur_plein_cm;hauteur_cuve_cm;rssi;fw";
 
-    if ($lines) {
-        // Première ligne : si elle commence par datetime, on remet un header propre
-        if (isset($lines[0]) && str_starts_with($lines[0], 'datetime')) {
-            $newLines[] = $header;
-            $start = 1;
-        } else {
-            // Sinon, on force un header propre
-            $newLines[] = $header;
-            $start = 0;
-        }
+        $newLines[] = $header;
+        $start = (isset($lines[0]) && str_starts_with($lines[0], 'datetime')) ? 1 : 0;
 
         for ($i = $start; $i < count($lines); $i++) {
             $line = trim($lines[$i]);
@@ -136,9 +129,9 @@ if (file_exists($csvFile)) {
                 $newLines[] = $line;
             }
         }
-    }
 
-    file_put_contents($csvFile, implode("\n", $newLines) . "\n", LOCK_EX);
+        return implode("\n", $newLines) . "\n";
+    });
 }
 
 // ------------------------------------------------------------------

@@ -1,6 +1,7 @@
 <?php
 // save_history.php — Enregistre un "instantané" des volumes par lot
 header("Content-Type: application/json; charset=utf-8");
+require __DIR__ . '/lock_lib.php';
 
 // On n'accepte que POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -27,13 +28,14 @@ function valf_local($arr, $key, $default = null) {
     return isset($arr[$key]) && $arr[$key] !== '' ? $arr[$key] : $default;
 }
 
-// Charger le cache cuves
-if (!file_exists($cacheFile)) {
+// Charger le cache cuves (lecture protegee : evite de lire pendant
+// qu'update_cache.php est en train de le reecrire)
+$cuvesJson = lockedRead($cacheFile);
+if ($cuvesJson === null) {
     http_response_code(500);
     echo json_encode(["status" => "ERROR", "error" => "cache_dashboard.json introuvable"]);
     exit;
 }
-$cuvesJson = file_get_contents($cacheFile);
 $cuves = json_decode($cuvesJson, true);
 if (!is_array($cuves)) {
     http_response_code(500);
@@ -43,8 +45,9 @@ if (!is_array($cuves)) {
 
 // Charger la config pour récupérer les lots
 $lotById = [];
-if (file_exists($configFile)) {
-    $config = json_decode(file_get_contents($configFile), true);
+$configJson = lockedRead($configFile);
+if ($configJson !== null) {
+    $config = json_decode($configJson, true);
     if (is_array($config)) {
         foreach ($config as $cfg) {
             if (!empty($cfg['id'])) {
@@ -84,16 +87,6 @@ foreach ($lotsTotals as $ln => $vhl) {
     ];
 }
 
-// Charger l'historique existant
-$history = [];
-if (file_exists($historyFile)) {
-    $historyJson = file_get_contents($historyFile);
-    $history = json_decode($historyJson, true);
-    if (!is_array($history)) {
-        $history = [];
-    }
-}
-
 // Nouvelle entrée
 $newEntry = [
     "datetime"  => date("Y-m-d H:i:s"),
@@ -102,18 +95,28 @@ $newEntry = [
     "lots"      => $lotsArray
 ];
 
-// Ajouter à la fin
-$history[] = $newEntry;
+// Lecture + ajout + ecriture de l'historique sous un seul verrou continu
+// (deux "Enregistrer un instantané" presque simultanés ne doivent pas
+// s'écraser l'un l'autre).
+try {
+    $history = lockedReadModifyWriteJson($historyFile, function ($history) use ($newEntry) {
+        if (!is_array($history)) {
+            $history = [];
+        }
 
-// Limiter à 300 entrées max (on garde les plus récentes)
-$maxEntries = 300;
-if (count($history) > $maxEntries) {
-    // On coupe par le bas (anciennes en premier)
-    $history = array_slice($history, -$maxEntries);
-}
+        // Ajouter à la fin
+        $history[] = $newEntry;
 
-// Sauvegarder
-if (file_put_contents($historyFile, json_encode($history, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) === false) {
+        // Limiter à 300 entrées max (on garde les plus récentes)
+        $maxEntries = 300;
+        if (count($history) > $maxEntries) {
+            // On coupe par le bas (anciennes en premier)
+            $history = array_slice($history, -$maxEntries);
+        }
+
+        return $history;
+    });
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(["status" => "ERROR", "error" => "Impossible d'écrire dans history_lots.json"]);
     exit;

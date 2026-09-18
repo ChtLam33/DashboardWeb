@@ -1,16 +1,19 @@
 <?php
 // update_config_from_csv.php — ajoute uniquement les nouveaux IDs depuis data_cuves.csv
 
+require __DIR__ . '/lock_lib.php';
+
 $csvFile  = __DIR__ . "/data_cuves.csv";
 $jsonFile = __DIR__ . "/config_cuves.json";
 
-if (!file_exists($csvFile)) {
+$csvContent = lockedRead($csvFile);
+if ($csvContent === null) {
     echo "❌ Fichier CSV introuvable.";
     exit;
 }
 
 // --- Lecture des IDs présents dans le CSV ---
-$lines  = file($csvFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+$lines  = ($csvContent === '') ? [] : preg_split('/\r\n|\r|\n/', $csvContent, -1, PREG_SPLIT_NO_EMPTY);
 $newIds = [];
 
 foreach ($lines as $line) {
@@ -25,39 +28,37 @@ if ($id && $id !== "id" && $id !== "cuve") {
     }
 }
 
-// --- Lecture du JSON actuel ---
-$config = [];
-if (file_exists($jsonFile)) {
-    $config = json_decode(file_get_contents($jsonFile), true);
+// --- Vérifie chaque ID du CSV et ajoute les nouveaux, sous un seul
+//     verrou continu (lecture + ajout + ecriture) pour ne pas ecraser
+//     une modif concurrente de save_config.php / save_order.php / purge_cuves.php ---
+$config = lockedReadModifyWriteJson($jsonFile, function ($config) use ($newIds) {
     if (!is_array($config)) $config = [];
-}
 
-// --- Vérifie chaque ID du CSV ---
-foreach ($newIds as $id => $nomCuve) {
-    $exists = false;
-    foreach ($config as $entry) {
-        if (isset($entry['id']) && $entry['id'] === $id) {
-            $exists = true;
-            break;
+    foreach ($newIds as $id => $nomCuve) {
+        $exists = false;
+        foreach ($config as $entry) {
+            if (isset($entry['id']) && $entry['id'] === $id) {
+                $exists = true;
+                break;
+            }
+        }
+        if (!$exists) {
+            // ➕ Ajoute seulement les nouveaux
+            $config[] = [
+                "id"                 => $id,
+                "nomCuve"            => $nomCuve,
+                "lot"                => "",      // nouveau champ, vide par défaut
+                "hauteurCapteurFond" => 200,
+                "hauteurMaxLiquide"  => 50,
+                "diametreCuve"       => 70,
+                "AjustementHL"       => 0.00
+            ];
+            echo "➕ Nouveau capteur détecté : $id ($nomCuve)\n";
         }
     }
-    if (!$exists) {
-        // ➕ Ajoute seulement les nouveaux
-        $config[] = [
-            "id"                 => $id,
-            "nomCuve"            => $nomCuve,
-            "lot"                => "",      // nouveau champ, vide par défaut
-            "hauteurCapteurFond" => 200,
-            "hauteurMaxLiquide"  => 50,
-            "diametreCuve"       => 70,
-            "AjustementHL"       => 0.00
-        ];
-        echo "➕ Nouveau capteur détecté : $id ($nomCuve)\n";
-    }
-}
 
-// --- Sauvegarde si ajout(s) ---
-file_put_contents($jsonFile, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    return $config;
+});
 
 echo "✅ Vérification terminée (" . count($config) . " capteurs au total).";
 ?>

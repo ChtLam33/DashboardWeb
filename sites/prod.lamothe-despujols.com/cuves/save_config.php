@@ -1,6 +1,7 @@
 <?php
 // save_config.php — Enregistre les nouveaux paramètres dans config_cuves.json
 header("Content-Type: application/json; charset=utf-8");
+require __DIR__ . '/lock_lib.php';
 
 // Vérifie la méthode
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -37,10 +38,15 @@ unset($cuve);
 // Chemin du fichier
 $file = __DIR__ . "/config_cuves.json";
 
-// Sauvegarde du fichier
-if (file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE))) {
-    echo json_encode(["status" => "OK", "saved" => count($data)]);
-} else {
+// Ecriture protegee par verrou exclusif (evite qu'une ecriture concurrente
+// - save_order.php, purge_cuves.php, update_config_from_csv.php - ne
+// corrompe le fichier ou n'ecrase cette sauvegarde juste apres).
+try {
+    $saved = lockedReadModifyWriteJson($file, function ($old) use ($data) {
+        return $data;
+    });
+    echo json_encode(["status" => "OK", "saved" => count($saved)]);
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(["error" => "Impossible d’écrire dans config_cuves.json"]);
 }

@@ -1,14 +1,16 @@
 <?php
 // get_config.php — renvoie la configuration complète ou celle d'un ID spécifique
 header("Content-Type: application/json; charset=utf-8");
+require __DIR__ . '/lock_lib.php';
 
 $file = __DIR__ . "/config_cuves.json";
-if (!file_exists($file)) {
+$raw  = lockedRead($file);
+if ($raw === null) {
     echo json_encode(["error" => "Fichier config_cuves.json introuvable"]);
     exit;
 }
 
-$config = json_decode(file_get_contents($file), true);
+$config = json_decode($raw, true);
 if (!$config) {
     echo json_encode(["error" => "Fichier config_cuves.json invalide"]);
     exit;

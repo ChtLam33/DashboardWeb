@@ -4,6 +4,7 @@
 // et réordonne config_cuves.json en conséquence.
 
 header("Content-Type: application/json; charset=utf-8");
+require __DIR__ . '/lock_lib.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -32,48 +33,51 @@ if (!file_exists($configFile)) {
     exit;
 }
 
-$config = json_decode(file_get_contents($configFile), true);
-if (!is_array($config)) {
-    http_response_code(500);
-    echo json_encode(["error" => "config_cuves.json invalide"]);
-    exit;
-}
+// Lecture + reordonnancement + ecriture sous un seul verrou continu, pour
+// ne pas se baser sur une config perimee si une autre requete (save_config,
+// purge_cuves...) ecrit entre notre lecture et notre ecriture.
+try {
+    $newConfig = lockedReadModifyWriteJson($configFile, function ($config) use ($orderIds) {
+        if (!is_array($config)) {
+            $config = [];
+        }
 
-// Indexer la config par ID
-$index = [];
-foreach ($config as $entry) {
-    if (isset($entry['id'])) {
-        $index[$entry['id']] = $entry;
-    }
-}
+        // Indexer la config par ID
+        $index = [];
+        foreach ($config as $entry) {
+            if (isset($entry['id'])) {
+                $index[$entry['id']] = $entry;
+            }
+        }
 
-// Construire un nouveau tableau ordonné
-$newConfig = [];
+        // Construire un nouveau tableau ordonné
+        $newConfig = [];
 
-// 1) D'abord les IDs fournis dans "order"
-foreach ($orderIds as $id) {
-    if (isset($index[$id])) {
-        $newConfig[] = $index[$id];
-        unset($index[$id]);
-    }
-}
+        // 1) D'abord les IDs fournis dans "order"
+        foreach ($orderIds as $id) {
+            if (isset($index[$id])) {
+                $newConfig[] = $index[$id];
+                unset($index[$id]);
+            }
+        }
 
-// 2) Puis tous les autres, dans l'ordre d'origine
-foreach ($config as $entry) {
-    $id = $entry['id'] ?? null;
-    if ($id !== null && isset($index[$id])) {
-        $newConfig[] = $entry;
-        unset($index[$id]);
-    }
-}
+        // 2) Puis tous les autres, dans l'ordre d'origine
+        foreach ($config as $entry) {
+            $id = $entry['id'] ?? null;
+            if ($id !== null && isset($index[$id])) {
+                $newConfig[] = $entry;
+                unset($index[$id]);
+            }
+        }
 
-// Sauvegarde
-if (file_put_contents($configFile, json_encode($newConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE))) {
+        return $newConfig;
+    });
+
     echo json_encode([
         "status" => "OK",
         "saved"  => count($newConfig)
     ]);
-} else {
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(["error" => "Impossible d'écrire dans config_cuves.json"]);
 }
