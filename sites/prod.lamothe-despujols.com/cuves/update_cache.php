@@ -12,9 +12,22 @@ $result     = [];
 
 // ---------------------------------------------------------
 // 1) Lecture du CSV de mesures (data_cuves.csv)
+//    Verrou partage (lecture) : evite de lire le fichier pendant qu'un
+//    capteur est en train d'y ecrire (voir api_cuve.php, meme fichier).
 // ---------------------------------------------------------
 if (file_exists($file)) {
-    $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    $lines = [];
+    $fp = fopen($file, 'r');
+    if ($fp !== false) {
+        if (flock($fp, LOCK_SH)) {
+            $content = stream_get_contents($fp);
+            flock($fp, LOCK_UN);
+            if ($content !== false && trim($content) !== '') {
+                $lines = preg_split('/\r\n|\r|\n/', $content, -1, PREG_SPLIT_NO_EMPTY);
+            }
+        }
+        fclose($fp);
+    }
 
     if (count($lines) > 1) {
         // Première ligne = en-tête CSV
