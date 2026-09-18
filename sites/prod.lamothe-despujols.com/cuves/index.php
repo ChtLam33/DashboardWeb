@@ -227,6 +227,23 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   main{grid-template-columns: repeat(5, 1fr);}
 }
 
+/* Smartphone en paysage (large mais bas) : la regle 900px ci-dessus ne
+   s'applique jamais a un telephone, qui reste coince a 2 colonnes. On
+   cible specifiquement ce format (hauteur faible = telephone tenu en
+   main, pas une tablette/ecran) pour maximiser le nombre de cuves
+   visibles sans defilement, en resserrant aussi chaque carte. */
+@media (orientation:landscape) and (max-height:500px){
+  main{grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap:6px; padding:6px;}
+  .cuve{padding:6px;}
+  .bar{height:55px;}
+  .head{margin-bottom:3px; gap:5px;}
+  .head h2{font-size:.78rem;}
+  .head .lot-label{font-size:.68rem;}
+  .wifi-icon{width:14px;height:14px;}
+  .infos{font-size:.7rem;margin-top:4px;line-height:1.3;}
+  .drag-handle{width:16px;height:16px;font-size:10px;right:4px;bottom:4px;}
+}
+
 .cuve{
   background:var(--card);
   border-radius:12px;
