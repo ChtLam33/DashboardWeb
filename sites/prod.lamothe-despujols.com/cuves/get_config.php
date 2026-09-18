@@ -29,6 +29,25 @@ if ($id !== '') {
     exit;
 }
 
-// --- Sinon, renvoyer tout le tableau (pour le dashboard) ---
+// --- Sinon, renvoyer tout le tableau (pour le dashboard), enrichi de la
+//     derniere version firmware connue par capteur (cache_dashboard.json,
+//     alimente par update_cache.php a partir de data_cuves.csv) ---
+$fwById = [];
+$cacheRaw = lockedRead(__DIR__ . "/cache_dashboard.json");
+if ($cacheRaw !== null) {
+    $cacheData = json_decode($cacheRaw, true);
+    if (is_array($cacheData)) {
+        foreach ($cacheData as $c) {
+            if (isset($c['id'])) {
+                $fwById[$c['id']] = $c['fw'] ?? '';
+            }
+        }
+    }
+}
+foreach ($config as &$cuve) {
+    $cuve['fw'] = $fwById[$cuve['id'] ?? ''] ?? '';
+}
+unset($cuve);
+
 echo json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 ?>

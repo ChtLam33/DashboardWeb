@@ -382,9 +382,29 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 }
 .popup-content{
   background:#101010;color:#eee;padding:16px;border-radius:12px;
-  width:90%;max-width:820px;border:1px solid #2a2a2a
+  width:90%;max-width:820px;border:1px solid #2a2a2a;
+  max-height:90vh;
+  display:flex;flex-direction:column;
 }
-.popup-content h3{margin:.2rem 0 10px;color:var(--gold)}
+.popup-content h3{margin:.2rem 0 10px;color:var(--gold);flex-shrink:0}
+.popup-scroll{
+  overflow-y:auto;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.popup-footer{
+  flex-shrink:0;
+  display:flex;
+  gap:8px;
+  padding-top:10px;
+  margin-top:8px;
+  border-top:1px solid #2a2a2a;
+}
+@media (max-height:500px){
+  .popup-content{padding:10px;max-height:96vh}
+  .param-table th,.param-table td{padding:4px 5px;font-size:.75rem}
+  .param-table input,.param-table select{padding:4px;font-size:.72rem}
+}
 .param-table{width:100%;border-collapse:collapse}
 .param-table th,.param-table td{
   border-bottom:1px solid #2a2a2a;padding:6px 8px;text-align:left;font-size:.9rem
@@ -401,7 +421,6 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .popup-content button{
   background:var(--gold2);color:#000;border:none;padding:8px 14px;border-radius:8px;cursor:pointer
 }
-.save-btn{margin-top:10px}
 
 /* Résumé des volumes par lot */
 .lots-summary{
@@ -817,9 +836,13 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 <div class="param-popup" id="paramPopup">
   <div class="popup-content">
     <h3>Paramètres des cuves</h3>
-    <div id="paramContainer">Chargement...</div>
-    <button class="save-btn" onclick="saveConfig()">💾 Enregistrer les modifications</button>
-    <button onclick="hideParamPopup()">Fermer</button>
+    <div class="popup-scroll">
+      <div id="paramContainer">Chargement...</div>
+    </div>
+    <div class="popup-footer">
+      <button class="save-btn" onclick="saveConfig()">💾 Enregistrer les modifications</button>
+      <button onclick="hideParamPopup()">Fermer</button>
+    </div>
   </div>
 </div>
 
@@ -918,6 +941,7 @@ async function showParamPopup(){
     let html=`<table class='param-table'>
     <tr>
       <th>ID</th>
+      <th>Firmware</th>
       <th>Nom</th>
       <th>Couleur</th>
       <th>Lot</th>
@@ -930,6 +954,7 @@ async function showParamPopup(){
       const col = cu.couleur ?? '';
       html+=`<tr>
       <td>${cu.id}</td>
+      <td>${cu.fw?cu.fw:'<span class="muted">?</span>'}</td>
       <td><input value="${cu.nomCuve??''}" data-i="${i}" data-k="nomCuve"></td>
       <td>
         <select data-i="${i}" data-k="couleur">
@@ -980,10 +1005,13 @@ async function saveConfig(){
   statusEl.textContent = "⏳ Sauvegarde en cours...";
 
   try{
+    // "fw" est une info affichee (derniere version connue via cache_dashboard.json),
+    // pas un reglage : on ne la sauvegarde pas dans config_cuves.json.
+    const toSave = configData.map(({fw, ...rest}) => rest);
     const res = await fetch('save_config.php',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(configData)
+      body:JSON.stringify(toSave)
     });
     const d = await res.json();
 

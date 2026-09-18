@@ -63,6 +63,7 @@ if (file_exists($file)) {
                 "hauteurPlein" => isset($row["hauteur_plein_cm"]) ? floatval($row["hauteur_plein_cm"]) : null,
                 "hauteurCuve"  => isset($row["hauteur_cuve_cm"])  ? floatval($row["hauteur_cuve_cm"])  : null,
                 "rssi"         => isset($row["rssi"])             ? intval($row["rssi"])               : null,
+                "fw"           => $row["fw"] ?? "",
             ];
 
             $result[] = $normalized;
@@ -112,10 +113,13 @@ if (!empty($orderIndex) && !empty($result)) {
 
 // ---------------------------------------------------------
 // 4) Sauvegarde du cache (toujours les dernières valeurs)
+//    LOCK_EX : evite qu'une lecture protegee ailleurs (lockedRead, voir
+//    lock_lib.php) tombe sur un fichier a moitie ecrit.
 // ---------------------------------------------------------
 file_put_contents(
     $cacheFile,
-    json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+    LOCK_EX
 );
 
 // Réponse pour le dashboard

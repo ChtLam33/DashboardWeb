@@ -1,0 +1,8 @@
+# Empeche le telechargement direct des fichiers de donnees (contournent
+# auto_prepend_file / l'authentification Google, qui ne s'applique qu'au PHP)
+<FilesMatch "\.(json|csv)$">
+    Require all denied
+</FilesMatch>
+
+# Empeche le listing du contenu du dossier si aucun index n'est present
+Options -Indexes
