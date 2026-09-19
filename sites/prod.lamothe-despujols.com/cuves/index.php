@@ -227,22 +227,6 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   main{grid-template-columns: repeat(5, 1fr);}
 }
 
-/* Smartphone en paysage (large mais bas) : la regle 900px ci-dessus ne
-   s'applique jamais a un telephone, qui reste coince a 2 colonnes. On
-   cible specifiquement ce format (hauteur faible = telephone tenu en
-   main, pas une tablette/ecran) pour maximiser le nombre de cuves
-   visibles sans defilement, en resserrant aussi chaque carte. */
-@media (orientation:landscape) and (max-height:500px){
-  main{grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap:6px; padding:6px;}
-  .cuve{padding:6px;}
-  .bar{height:55px;}
-  .head{margin-bottom:3px; gap:5px;}
-  .head h2{font-size:.78rem;}
-  .head .lot-label{font-size:.68rem;}
-  .wifi-icon{width:14px;height:14px;}
-  .infos{font-size:.7rem;margin-top:4px;line-height:1.3;}
-  .drag-handle{width:16px;height:16px;font-size:10px;right:4px;bottom:4px;}
-}
 
 .cuve{
   background:var(--card);
@@ -617,6 +601,49 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .roadmap-form button{align-self:flex-end;background:#f3d26b;border:none;border-radius:4px;color:#111;padding:6px 14px;font-size:.85rem;cursor:pointer;font-weight:600;}
 .roadmap-empty{color:#9aa0a6;font-size:.85rem;}
 .roadmap-footer button{background:transparent;border:none;color:#9aa0a6;font-size:1.2rem;cursor:pointer;}
+
+/* Smartphone en paysage (large mais bas) : place en toute fin de feuille
+   de style pour etre sur de surcharger toutes les regles de base
+   ci-dessus (meme specificite partout ici -> l'ordre dans le fichier
+   decide, cf. le bug d'ordre corrige sur le popup parametres). Cible ce
+   format (hauteur faible = telephone tenu en main, pas une
+   tablette/ecran) pour maximiser le nombre de cuves visibles et eviter
+   que la barre d'actions et le tableau "Volumes par lot" debordent. */
+@media (orientation:landscape) and (max-height:500px){
+  main{grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap:6px; padding:6px;}
+  .cuve{padding:6px;}
+  .bar{height:55px;}
+  .head{margin-bottom:3px; gap:5px;}
+  .head h2{font-size:.78rem;}
+  .head .lot-label{font-size:.68rem;}
+  .wifi-icon{width:14px;height:14px;}
+  .infos{font-size:.7rem;margin-top:4px;line-height:1.3;}
+  .drag-handle{width:16px;height:16px;font-size:10px;right:4px;bottom:4px;}
+
+  /* Barre d'entete + actions : evite que les boutons soient coupes a
+     droite (ils se retrouvaient plus larges que l'espace restant apres
+     le titre, sans possibilite de passer a la ligne ni de defiler). */
+  header{padding:6px 10px; gap:6px;}
+  header h1{font-size:.8rem;}
+  #updateTime{display:none;}
+  .exit-link{width:24px;height:24px;font-size:.85rem;}
+  .actions{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; width:100%;}
+  .actions button{padding:5px 8px; font-size:.72rem;}
+
+  /* Tableau "Volumes par lot" : largeurs de colonnes fixes + defilement
+     horizontal si besoin, au lieu de compresser la colonne Lot jusqu'a
+     l'illisible (une seule lettre visible). */
+  .lots-summary{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .lots-summary table{width:100%; min-width:420px; table-layout:fixed; font-size:.72rem;}
+  .lots-summary th, .lots-summary td{
+    padding:3px 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .lots-summary th:nth-child(1),.lots-summary td:nth-child(1){width:70px}
+  .lots-summary th:nth-child(2),.lots-summary td:nth-child(2){width:80px}
+  .lots-summary th:nth-child(3),.lots-summary td:nth-child(3){width:90px}
+  .lots-summary th:nth-child(4),.lots-summary td:nth-child(4){width:90px}
+  .lots-summary th:nth-child(5),.lots-summary td:nth-child(5){width:70px}
+}
 </style>
 </head>
 <body>
