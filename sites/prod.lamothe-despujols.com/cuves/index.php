@@ -400,16 +400,25 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   margin-top:8px;
   border-top:1px solid #2a2a2a;
 }
-@media (max-height:500px){
-  .popup-content{padding:10px;max-height:96vh}
-  .param-table th,.param-table td{padding:4px 5px;font-size:.75rem}
-  .param-table input,.param-table select{padding:4px;font-size:.72rem}
-}
-.param-table{width:100%;border-collapse:collapse}
+/* table-layout:fixed + colonnes en largeur fixe : sur petit ecran, la
+   table est plus large que la popup et defile horizontalement (scroll)
+   au lieu de compresser chaque colonne jusqu'a l'illisible (nom tronque,
+   couleur/lot reduits a une lettre...). */
+.param-table{width:100%;min-width:820px;border-collapse:collapse;table-layout:fixed}
 .param-table th,.param-table td{
-  border-bottom:1px solid #2a2a2a;padding:6px 8px;text-align:left;font-size:.9rem
+  border-bottom:1px solid #2a2a2a;padding:6px 8px;text-align:left;font-size:.9rem;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .param-table th{background:#141414;color:#d8c07a}
+.param-table th:nth-child(1),.param-table td:nth-child(1){width:115px}
+.param-table th:nth-child(2),.param-table td:nth-child(2){width:70px}
+.param-table th:nth-child(3),.param-table td:nth-child(3){width:100px}
+.param-table th:nth-child(4),.param-table td:nth-child(4){width:125px}
+.param-table th:nth-child(5),.param-table td:nth-child(5){width:70px}
+.param-table th:nth-child(6),.param-table td:nth-child(6){width:90px}
+.param-table th:nth-child(7),.param-table td:nth-child(7){width:90px}
+.param-table th:nth-child(8),.param-table td:nth-child(8){width:80px}
+.param-table th:nth-child(9),.param-table td:nth-child(9){width:70px}
 .param-table input, .param-table select{
   width:100%;border:1px solid #3a3a3a;border-radius:6px;
   padding:6px;background:#0e0e0e;color:#eee;
@@ -417,6 +426,24 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 }
 .param-table select{
   padding-right:20px;
+}
+/* Paysage smartphone (peu de hauteur) : colonnes plus etroites pour
+   limiter le scroll horizontal, tout en restant lisibles (place apres
+   les regles de base pour bien les surcharger, meme specificite). */
+@media (max-height:500px){
+  .popup-content{padding:10px;max-height:96vh}
+  .param-table{min-width:660px}
+  .param-table th,.param-table td{padding:4px 5px;font-size:.75rem}
+  .param-table input,.param-table select{padding:4px;font-size:.72rem}
+  .param-table th:nth-child(1),.param-table td:nth-child(1){width:78px}
+  .param-table th:nth-child(2),.param-table td:nth-child(2){width:52px}
+  .param-table th:nth-child(3),.param-table td:nth-child(3){width:70px}
+  .param-table th:nth-child(4),.param-table td:nth-child(4){width:95px}
+  .param-table th:nth-child(5),.param-table td:nth-child(5){width:56px}
+  .param-table th:nth-child(6),.param-table td:nth-child(6){width:68px}
+  .param-table th:nth-child(7),.param-table td:nth-child(7){width:68px}
+  .param-table th:nth-child(8),.param-table td:nth-child(8){width:60px}
+  .param-table th:nth-child(9),.param-table td:nth-child(9){width:56px}
 }
 .popup-content button{
   background:var(--gold2);color:#000;border:none;padding:8px 14px;border-radius:8px;cursor:pointer
