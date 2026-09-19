@@ -351,6 +351,13 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 }
 
 .infos{margin-top:8px;font-size:.82rem;color:#cfcfcf;line-height:1.4}
+/* Par defaut (desktop/tablette/paysage smartphone), chaque info-row garde
+   le meme rendu qu'avant (deux lignes empilees et centrees) : les spans
+   qu'elle contient restent en bloc. En portrait smartphone (media query
+   plus bas), info-row passe en ligne pour repartir % et Hauteur, puis
+   Volume et Distance, sur la largeur disponible plutot que de les
+   empiler ou de laisser l'espace vide a droite. */
+.info-row > span{display:block}
 .muted{color:var(--muted)}
 #loading{display:none;text-align:center;padding:8px;background:#fff3be;color:#b17f00}
 
@@ -383,7 +390,23 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   .head .lot-label{font-size:.7rem;}
   .wifi-icon{width:14px;height:14px;}
   .infos{grid-area:infos; margin-top:0; font-size:.72rem; line-height:1.3;}
-  .infos .hauteur-line,.infos .distance-line{display:none;}
+  .info-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:8px;
+  }
+  .info-row .pourc-val,.info-row .vol-val{
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .info-row .hauteur-line,.info-row .distance-line{
+    color:var(--muted);
+    white-space:nowrap;
+    flex-shrink:0;
+  }
   .drag-handle{display:none;}
   .reflet{height:10px;}
 }
@@ -761,17 +784,21 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     </div>
 
     <div class="infos">
-      <div><strong><?= nf($pourc,1) ?> %</strong> rempli</div>
-      <div>
-        <?= nf($vol,2) ?> / <?= nf($cap,2) ?> HL
-        <span class="muted">(+<?= nf($corr,2) ?> HL)</span>
+      <div class="info-row">
+        <span class="pourc-val"><strong><?= nf($pourc,1) ?> %</strong> rempli</span>
+        <?php if($hPlein!==null && $hCuve!==null): ?>
+          <span class="hauteur-line">Hauteur : <?= nf($hPlein,1) ?> / <?= nf($hCuve,1) ?> cm</span>
+        <?php endif; ?>
       </div>
-      <?php if($hPlein!==null && $hCuve!==null): ?>
-        <div class="hauteur-line">Hauteur : <?= nf($hPlein,1) ?> / <?= nf($hCuve,1) ?> cm</div>
-      <?php endif; ?>
-      <?php if($dist!==null): ?>
-        <div class="distance-line">Distance : <?= (int)$dist ?> cm</div>
-      <?php endif; ?>
+      <div class="info-row">
+        <span class="vol-val">
+          <?= nf($vol,2) ?> / <?= nf($cap,2) ?> HL
+          <span class="muted">(+<?= nf($corr,2) ?> HL)</span>
+        </span>
+        <?php if($dist!==null): ?>
+          <span class="distance-line">Distance : <?= (int)$dist ?> cm</span>
+        <?php endif; ?>
+      </div>
 
       <?php if($hasObstacle): ?>
         <div class="muted" style="color:#ffb74d;font-size:.8rem;">
