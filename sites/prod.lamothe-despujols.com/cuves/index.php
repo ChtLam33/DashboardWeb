@@ -354,6 +354,40 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .muted{color:var(--muted)}
 #loading{display:none;text-align:center;padding:8px;background:#fff3be;color:#b17f00}
 
+/* Portrait smartphone : carte compacte en ligne (baton de remplissage
+   etroit a gauche, texte a droite empile) au lieu de la carte verticale
+   complete, pour voir un maximum de cuves sans defiler. Meme logique que
+   le mode paysage compact plus haut, adaptee a l'orientation portrait. */
+@media (orientation:portrait) and (max-width:700px){
+  main{grid-template-columns:1fr; gap:6px; padding:8px;}
+  .cuve{
+    display:grid;
+    grid-template-columns:44px 1fr;
+    grid-template-areas:"bar head" "bar infos";
+    align-items:center;
+    column-gap:10px;
+    row-gap:0;
+    padding:8px 10px;
+    text-align:left;
+  }
+  .bar{
+    grid-area:bar;
+    width:100%;
+    height:auto;
+    align-self:stretch;
+    min-height:56px;
+    border-radius:10px;
+  }
+  .head{grid-area:head; justify-content:flex-start; margin-bottom:2px;}
+  .head h2{font-size:.85rem;}
+  .head .lot-label{font-size:.7rem;}
+  .wifi-icon{width:14px;height:14px;}
+  .infos{grid-area:infos; margin-top:0; font-size:.72rem; line-height:1.3;}
+  .infos .hauteur-line,.infos .distance-line{display:none;}
+  .drag-handle{display:none;}
+  .reflet{height:10px;}
+}
+
 /* Handle de drag (4 flèches) */
 .drag-handle{
   position:absolute;
@@ -733,10 +767,10 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         <span class="muted">(+<?= nf($corr,2) ?> HL)</span>
       </div>
       <?php if($hPlein!==null && $hCuve!==null): ?>
-        <div>Hauteur : <?= nf($hPlein,1) ?> / <?= nf($hCuve,1) ?> cm</div>
+        <div class="hauteur-line">Hauteur : <?= nf($hPlein,1) ?> / <?= nf($hCuve,1) ?> cm</div>
       <?php endif; ?>
       <?php if($dist!==null): ?>
-        <div>Distance : <?= (int)$dist ?> cm</div>
+        <div class="distance-line">Distance : <?= (int)$dist ?> cm</div>
       <?php endif; ?>
 
       <?php if($hasObstacle): ?>
