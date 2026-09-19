@@ -770,6 +770,38 @@ $modeBanner = implode(' • ', $modeParts);
         .settings-row label{display:block;margin-bottom:.25rem;}
         .settings-row input[type="number"], .settings-row select{width:100%;padding:4px 6px;border-radius:4px;border:1px solid #444;background:#0b0e13;color:#f5f5f5;font-size:.9rem;}
         input[disabled]{opacity:.5;cursor:not-allowed;}
+
+        /* Tableau "Vue par capteur" en paysage smartphone (seul mode mobile
+           possible ici, le portrait etant bloque - voir .rotate-overlay) :
+           14 colonnes (dont Lot et Offset en input texte/nombre) ne
+           tiennent pas sur un ecran de telephone. Sans protection, le
+           navigateur ecrasait chaque colonne au lieu de deborder (ex :
+           Lot illisible, "Actions" coupe a "Action"). Place en toute fin
+           de feuille de style pour etre sur de surcharger les regles de
+           base ci-dessus (meme specificite -> l'ordre dans le fichier
+           decide, cf. bug d'ordre deja rencontre et corrige cote cuves). */
+        @media (orientation:landscape) and (max-height:500px){
+            .capteurs-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+            .capteurs-table{width:100%; min-width:1150px; table-layout:fixed; font-size:12px;}
+            .capteurs-table th,.capteurs-table td{
+                padding:4px 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+            }
+            .capteurs-table th:nth-child(1),.capteurs-table td:nth-child(1){width:90px}
+            .capteurs-table th:nth-child(2),.capteurs-table td:nth-child(2){width:100px}
+            .capteurs-table th:nth-child(3),.capteurs-table td:nth-child(3){width:70px}
+            .capteurs-table th:nth-child(4),.capteurs-table td:nth-child(4){width:60px}
+            .capteurs-table th:nth-child(5),.capteurs-table td:nth-child(5){width:80px}
+            .capteurs-table th:nth-child(6),.capteurs-table td:nth-child(6){width:95px}
+            .capteurs-table th:nth-child(7),.capteurs-table td:nth-child(7){width:95px}
+            .capteurs-table th:nth-child(8),.capteurs-table td:nth-child(8){width:60px}
+            .capteurs-table th:nth-child(9),.capteurs-table td:nth-child(9){width:55px}
+            .capteurs-table th:nth-child(10),.capteurs-table td:nth-child(10){width:70px}
+            .capteurs-table th:nth-child(11),.capteurs-table td:nth-child(11){width:70px}
+            .capteurs-table th:nth-child(12),.capteurs-table td:nth-child(12){width:150px}
+            .capteurs-table th:nth-child(13),.capteurs-table td:nth-child(13){width:60px}
+            .capteurs-table th:nth-child(14),.capteurs-table td:nth-child(14){width:80px; overflow:visible;}
+            .capteurs-table .inline-input,.capteurs-table .inline-input-number{font-size:12px;padding:2px 4px;}
+        }
     </style>
 </head>
 <body>
@@ -821,9 +853,9 @@ $modeBanner = implode(' • ', $modeParts);
             <div class="card-header">
                 <span class="section-title">Vue par capteur</span>
             </div>
-            <div class="card-body">
+            <div class="card-body capteurs-scroll">
                 <form method="post" action="index.php">
-                    <table>
+                    <table class="capteurs-table">
                         <thead>
                         <tr>
                             <th>ID capteur</th>
