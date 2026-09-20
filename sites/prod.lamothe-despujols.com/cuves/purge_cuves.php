@@ -6,6 +6,15 @@
 // maintenant qu'on a un vrai historique en base) - seule sa ligne
 // "config" (nom, lot, hauteurs) est réinitialisée, comme s'il s'agissait
 // d'un nouveau capteur au prochain contact.
+//
+// Deux modes (voir index.php) :
+// - aperçu (par défaut, $_POST['confirm'] absent) : calcule qui SERAIT
+//   purgé sans rien supprimer - sert à afficher la liste nommée dans la
+//   confirmation avant d'agir, plutôt qu'un message générique.
+// - exécution ($_POST['confirm'] === '1') : purge réellement.
+// Les données lues (config.last_seen_ts) sont toujours celles en base au
+// moment de l'appel : pas besoin d'un "Actualiser" séparé avant, la purge
+// voit toujours l'état le plus récent, que la page ait été rechargée ou non.
 require __DIR__ . '/cuves_lib.php';
 header('Content-Type: application/json; charset=utf-8');
 
@@ -15,45 +24,43 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Seuil : au-dela de X secondes sans la moindre reception (config.last_seen_ts,
-// mis a jour a CHAQUE POST du capteur - meme quand aucune "mesure" n'est
-// enregistree), on considere le capteur hors ligne. 1h (et non quelques
-// dizaines de secondes) : le capteur envoie toutes les ~8s, donc une vraie
-// coupure WiFi de quelques minutes ne doit pas declencher une purge -
-// destructrice pour la config - a tort.
-$offlineThreshold = 3600;
+$confirm = ($_POST['confirm'] ?? '') === '1';
 $now = time();
 
 try {
     $config = getCuvesConfig();
 
-    $onlineIds  = [];
-    $offlineIds = [];
+    $online  = []; // [id => nom_cuve]
+    $offline = []; // [id => nom_cuve]
 
     foreach ($config as $cfg) {
         $sensorId = $cfg['sensor_id'];
-        $ts = (int)($cfg['last_seen_ts'] ?? 0);
-        $age = $now - $ts;
-        if ($ts > 0 && $age <= $offlineThreshold) {
-            $onlineIds[$sensorId] = true;
+        $label    = $cfg['nom_cuve'] !== '' ? $cfg['nom_cuve'] : $sensorId;
+        $ts       = (int)($cfg['last_seen_ts'] ?? 0);
+        $age      = $now - $ts;
+        if ($ts > 0 && $age <= CUVE_PURGE_THRESHOLD_SECONDS) {
+            $online[$sensorId] = $label;
         } else {
-            $offlineIds[$sensorId] = true;
+            $offline[$sensorId] = $label;
         }
     }
 
     $removed = 0;
-    foreach (array_keys($offlineIds) as $sensorId) {
-        resetCuveConfig($sensorId);
-        $removed++;
+    if ($confirm) {
+        foreach (array_keys($offline) as $sensorId) {
+            resetCuveConfig($sensorId);
+            $removed++;
+        }
     }
 
     echo json_encode([
         "status"            => "OK",
+        "executed"          => $confirm,
         "removed"           => $removed,
-        "online"            => array_keys($onlineIds),
-        "offline"           => array_keys($offlineIds),
-        "threshold_seconds" => $offlineThreshold
-    ]);
+        "online"            => array_values($online),
+        "offline"           => array_values($offline),
+        "threshold_seconds" => CUVE_PURGE_THRESHOLD_SECONDS
+    ], JSON_UNESCAPED_UNICODE);
 } catch (\Throwable $e) {
     error_log('[cuves] purge_cuves.php failed: ' . $e->getMessage());
     http_response_code(500);

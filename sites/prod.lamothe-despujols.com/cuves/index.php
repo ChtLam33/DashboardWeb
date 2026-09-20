@@ -1021,23 +1021,59 @@ function refreshData(){
 }
 
 // --- Purge des capteurs hors ligne ---
+// Purge en 2 temps : 1) apercu (lecture seule) pour savoir NOMMEMENT quels
+// capteurs seraient touches et l'afficher dans la confirmation (au lieu
+// d'un message generique) ; 2) execution reelle seulement si confirme.
+// purge_cuves.php lit toujours l'etat le plus recent en base (mis a jour
+// a chaque reception capteur, ~8s) : pas besoin d'un "Actualiser" separe
+// avant, l'apercu est deja a jour au moment du clic.
 async function purgeSensors(){
-  if (!confirm(
-    "ATTENTION :\n\n" +
-    "- Tous les capteurs considérés comme HORS LIGNE vont être supprimés du dashboard.\n" +
-    "- Leurs paramètres (nom de cuve, hauteurs, lot, couleur...) seront perdus.\n" +
-    "- Lorsqu’ils se reconnecteront, ils apparaîtront comme de nouveaux capteurs avec les paramètres par défaut.\n\n" +
-    "Continuer ?"
-  )) {
+  const loading = document.getElementById('loading');
+  loading.style.display = 'block';
+  loading.innerText = "🔎 Vérification des capteurs...";
+
+  let preview;
+  try {
+    const res = await fetch('purge_cuves.php', { method: 'POST', body: new URLSearchParams({confirm: '0'}) });
+    preview = await res.json();
+  } catch (e) {
+    console.error(e);
+    loading.innerText = "⚠️ Erreur réseau lors de la vérification.";
+    setTimeout(() => { loading.style.display = 'none'; }, 3000);
     return;
   }
 
-  const loading = document.getElementById('loading');
+  if (preview.status !== "OK") {
+    loading.innerText = "⚠️ Erreur lors de la vérification.";
+    setTimeout(() => { loading.style.display = 'none'; }, 3000);
+    return;
+  }
+
+  const offline = preview.offline || [];
+  const days = Math.round((preview.threshold_seconds || 0) / 86400);
+
+  if (offline.length === 0) {
+    loading.innerText = `✅ Aucun capteur à purger (tous ont donné signe de vie il y a moins de ${days} jours).`;
+    setTimeout(() => { loading.style.display = 'none'; }, 3000);
+    return;
+  }
+
+  loading.style.display = 'none';
+  const confirmed = confirm(
+    "ATTENTION :\n\n" +
+    `Les capteurs suivants sont considérés comme hors ligne (aucune mesure depuis plus de ${days} jours) et vont être supprimés du dashboard :\n` +
+    offline.map(n => "- " + n).join("\n") + "\n\n" +
+    "- Leurs paramètres (nom de cuve, hauteurs, lot, couleur...) seront perdus.\n" +
+    "- Lorsqu’ils se reconnecteront, ils apparaîtront comme de nouveaux capteurs avec les paramètres par défaut.\n\n" +
+    "Continuer ?"
+  );
+  if (!confirmed) return;
+
   loading.style.display = 'block';
   loading.innerText = "🧹 Purge en cours...";
 
   try {
-    const res  = await fetch('purge_cuves.php', { method: 'POST' });
+    const res  = await fetch('purge_cuves.php', { method: 'POST', body: new URLSearchParams({confirm: '1'}) });
     const data = await res.json();
 
     if (data.status === "OK") {

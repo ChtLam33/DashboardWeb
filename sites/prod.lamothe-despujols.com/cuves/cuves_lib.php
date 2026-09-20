@@ -206,6 +206,12 @@ function isCuveOffline(array $config, int $now): bool {
     return $lastSeen <= 0 || ($now - $lastSeen) > CUVE_OFFLINE_DISPLAY_SECONDS;
 }
 
+// Seuil (bien plus large que CUVE_OFFLINE_DISPLAY_SECONDS ci-dessus) au-dela
+// duquel un capteur silencieux est propose a la purge (reinitialisation de
+// sa config) - action destructrice, donc volontairement tres tolerante :
+// une coupure Wi-Fi de quelques heures ne doit jamais y mener.
+const CUVE_PURGE_THRESHOLD_SECONDS = 172800; // 2 jours
+
 /* =========================================================
    MESURES
    - "config.last_*" (mis a jour a CHAQUE reception, ~toutes les 8s) sert
