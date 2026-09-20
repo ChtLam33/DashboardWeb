@@ -259,16 +259,20 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   background-color:var(--unk);
 }
 
-/* Wi-Fi barré quand capteur hors ligne */
+/* Wi-Fi barré quand capteur hors ligne (>5 min sans mesure) - une vraie
+   ligne diagonale coin-a-coin (avant : un simple border-top rogne sur une
+   petite boite interieure, trop discret pour bien barrer le symbole). */
 .cuve.offline .wifi-icon{
   position:relative;
 }
 .cuve.offline .wifi-icon::after{
   content:"";
   position:absolute;
-  top:3px;left:3px;right:3px;bottom:3px;
-  border-top:2px solid #fff;
-  transform:rotate(35deg);
+  top:50%; left:50%;
+  width:26px; height:3px;
+  background:#fff;
+  box-shadow:0 0 0 1px rgba(0,0,0,.5);
+  transform:translate(-50%,-50%) rotate(45deg);
 }
 
 /* --- Cuve cylindrique avec effet de profondeur --- */
