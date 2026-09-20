@@ -49,6 +49,35 @@ function addRoadmapItem(string $titre, string $description): void {
 }
 
 /**
+ * Modifie un item ajoute manuellement (titre + description uniquement -
+ * les items "identifie" ne sont pas editables depuis le dashboard).
+ * Ne fait rien si l'id est introuvable ou ne correspond pas a un item
+ * "manuel". Renvoie true si la modification a bien eu lieu.
+ */
+function updateRoadmapItem(string $id, string $titre, string $description): bool {
+    $titre = trim($titre);
+    if ($id === '' || $titre === '') return false;
+
+    $items = loadRoadmap();
+    $found = false;
+    foreach ($items as &$item) {
+        if (!is_array($item)) continue;
+        if (($item['id'] ?? '') === $id && ($item['source'] ?? '') === 'manuel') {
+            $item['titre']       = $titre;
+            $item['description'] = trim($description);
+            $found = true;
+            break;
+        }
+    }
+    unset($item);
+
+    if ($found) {
+        saveRoadmap($items);
+    }
+    return $found;
+}
+
+/**
  * Retourne :
  * - 'categories' => [ nom_categorie => [ items... ] ] (source "identifie",
  *   dans l'ordre d'apparition dans le fichier, categories dans l'ordre

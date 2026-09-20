@@ -15,12 +15,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Seuil : au-delà de X secondes sans mesure, on considère le capteur hors ligne
-$offlineThreshold = 60;
+// Seuil : au-dela de X secondes sans la moindre reception (config.last_seen_ts,
+// mis a jour a CHAQUE POST du capteur - meme quand aucune "mesure" n'est
+// enregistree), on considere le capteur hors ligne. 1h (et non quelques
+// dizaines de secondes) : le capteur envoie toutes les ~8s, donc une vraie
+// coupure WiFi de quelques minutes ne doit pas declencher une purge -
+// destructrice pour la config - a tort.
+$offlineThreshold = 3600;
 $now = time();
 
 try {
-    $latest = getLatestCuveMeasurements();
     $config = getCuvesConfig();
 
     $onlineIds  = [];
@@ -28,7 +32,7 @@ try {
 
     foreach ($config as $cfg) {
         $sensorId = $cfg['sensor_id'];
-        $ts = isset($latest[$sensorId]) ? (int)$latest[$sensorId]['ts'] : 0;
+        $ts = (int)($cfg['last_seen_ts'] ?? 0);
         $age = $now - $ts;
         if ($ts > 0 && $age <= $offlineThreshold) {
             $onlineIds[$sensorId] = true;

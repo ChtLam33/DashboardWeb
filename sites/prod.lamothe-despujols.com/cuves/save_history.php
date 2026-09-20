@@ -17,24 +17,17 @@ if (is_array($data) && isset($data['comment'])) {
 }
 
 try {
-    $latest = getLatestCuveMeasurements();
     $config = getCuvesConfig();
-
-    $lotById = [];
-    foreach ($config as $cfg) {
-        $lotById[$cfg['sensor_id']] = $cfg['lot'];
-    }
 
     $lotsTotals = [];
     foreach ($config as $cfg) {
-        $sensorId = $cfg['sensor_id'];
-        if (!isset($latest[$sensorId])) continue;
+        if ($cfg['last_distance_cm'] === null) continue;
 
-        $interp = interpretCuve((int)$latest[$sensorId]['distance_cm'], $cfg);
+        $interp = interpretCuve((int)$cfg['last_distance_cm'], $cfg);
         $vol = $interp['volume_hl'];
 
-        $lotName = trim((string)($lotById[$sensorId] ?? '')) !== ''
-            ? trim((string)$lotById[$sensorId])
+        $lotName = trim((string)($cfg['lot'] ?? '')) !== ''
+            ? trim((string)$cfg['lot'])
             : 'Sans lot';
 
         if (!isset($lotsTotals[$lotName])) {

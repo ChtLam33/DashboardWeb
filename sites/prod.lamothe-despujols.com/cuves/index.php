@@ -23,10 +23,10 @@ function nf($v, $dec = 1) {
     return is_numeric($v) ? number_format((float)$v, $dec, ',', '') : '';
 }
 
-// --- Charger config + dernieres mesures depuis SQLite (toujours a jour,
-//     plus de fichier de cache intermediaire a regenerer) ---
+// --- Charger la config depuis SQLite (toujours a jour, plus de fichier de
+//     cache intermediaire a regenerer). "last_*" = dernier etat connu du
+//     capteur, mis a jour a CHAQUE reception (voir api_cuve.php) ---
 $config = getCuvesConfig(); // deja trie par position
-$latest = getLatestCuveMeasurements();
 
 $lotById   = [];
 $colorById = [];
@@ -39,46 +39,28 @@ foreach ($config as $cfg) {
     $hMaxById[$id]  = (float)$cfg['hauteur_max_liquide'];
 }
 
-// --- Construit $cuves (une entree par capteur, meme forme que l'ancien
-//     cache_dashboard.json avant migration SQLite), dans l'ordre de la config ---
+// --- Construit $cuves (une entree par capteur n'ayant jamais report une
+//     mesure), dans l'ordre de la config ---
 $cuves = [];
 foreach ($config as $cfg) {
     $id = $cfg['sensor_id'];
-    if (!isset($latest[$id])) continue;
+    if ($cfg['last_distance_cm'] === null) continue; // jamais vu de mesure
 
-    $m = $latest[$id];
-    $interp = interpretCuve((int)$m['distance_cm'], $cfg);
+    $interp = interpretCuve((int)$cfg['last_distance_cm'], $cfg);
 
     $cuves[] = [
         "id"           => $id,
         "cuve"         => $cfg['nom_cuve'],
-        "datetime"     => $m['date_iso'],
-        "distance_cm"  => (float)$m['distance_cm'],
+        "datetime"     => $cfg['last_date_iso'],
+        "distance_cm"  => (float)$cfg['last_distance_cm'],
         "volume_hl"    => $interp['volume_hl'],
         "capacite_hl"  => $interp['capacite_hl'],
         "pourcentage"  => $interp['pourcentage'],
         "correction"   => $interp['correction'],
         "hauteurPlein" => $interp['hauteurPlein'],
         "hauteurCuve"  => $interp['hauteurCuve'],
-        "rssi"         => $m['rssi'] !== null ? (int)$m['rssi'] : null,
-        "fw"           => $m['fw'] ?? '',
-    ];
-}
-
-// Capteurs qui ont deja poste une mesure mais n'ont pas (encore) de ligne
-// config (ne devrait pas arriver : ensureCuveConfigExists() les cree a la
-// premiere mesure - garde-fou au cas ou)
-$configIds = array_column($config, 'sensor_id');
-foreach ($latest as $id => $m) {
-    if (in_array($id, $configIds, true)) continue;
-    $interp = interpretCuve((int)$m['distance_cm'], []);
-    $cuves[] = [
-        "id" => $id, "cuve" => $id, "datetime" => $m['date_iso'],
-        "distance_cm" => (float)$m['distance_cm'], "volume_hl" => $interp['volume_hl'],
-        "capacite_hl" => $interp['capacite_hl'], "pourcentage" => $interp['pourcentage'],
-        "correction" => $interp['correction'], "hauteurPlein" => $interp['hauteurPlein'],
-        "hauteurCuve" => $interp['hauteurCuve'],
-        "rssi" => $m['rssi'] !== null ? (int)$m['rssi'] : null, "fw" => $m['fw'] ?? '',
+        "rssi"         => $cfg['last_rssi'] !== null ? (int)$cfg['last_rssi'] : null,
+        "fw"           => $cfg['last_fw'] ?? '',
     ];
 }
 
@@ -398,7 +380,10 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 }
 .popup-content{
   background:#101010;color:#eee;padding:16px;border-radius:12px;
-  width:90%;max-width:820px;border:1px solid #2a2a2a;
+  /* max-width > min-width de .param-table (820px) + padding, sinon la
+     barre de defilement horizontale apparaissait meme sur grand ecran
+     avec largement la place. */
+  width:90%;max-width:900px;border:1px solid #2a2a2a;
   max-height:90vh;
   display:flex;flex-direction:column;
 }
@@ -411,10 +396,25 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .popup-footer{
   flex-shrink:0;
   display:flex;
+  flex-wrap:wrap;
   gap:8px;
   padding-top:10px;
   margin-top:8px;
   border-top:1px solid #2a2a2a;
+}
+/* Bouton restaurer : couleur et position volontairement differentes du
+   bouton Enregistrer (meme dore, colles l'un a l'autre - risque de clic
+   par erreur signale par l'utilisateur). Pousse a droite du pied de page. */
+.restore-link-btn{
+  margin-left:auto;
+  background:transparent !important;
+  border:1px solid #555 !important;
+  color:#aaa !important;
+  font-size:.85rem;
+}
+.restore-link-btn:hover{
+  border-color:#888 !important;
+  color:#ddd !important;
 }
 /* table-layout:fixed + colonnes en largeur fixe : sur petit ecran, la
    table est plus large que la popup et defile horizontalement (scroll)
@@ -570,6 +570,8 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .roadmap-item .desc{color:#9aa0a6;font-size:.8rem;margin-top:.2rem;line-height:1.4;}
 .roadmap-item.manuel{border-left-color:#f3d26b;background:rgba(243,210,107,0.06);}
 .roadmap-item .date{color:#6b7280;font-size:.72rem;margin-top:.3rem;}
+.roadmap-item .edit-link{background:none;border:none;color:#6b7280;font-size:.72rem;cursor:pointer;padding:0 0 0 8px;text-decoration:underline;}
+.roadmap-item .edit-link:hover{color:#f3d26b;}
 .roadmap-form{margin-top:.8rem;display:flex;flex-direction:column;gap:6px;}
 .roadmap-form input, .roadmap-form textarea{background:#0b0e13;border:1px solid #444;border-radius:4px;color:#ddd;padding:6px 8px;font-size:.85rem;font-family:inherit;}
 .roadmap-form textarea{min-height:50px;resize:vertical;}
@@ -657,7 +659,10 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 
     $ageSec     = null;
     $isOffline  = false;
-    $offlineThreshold = 25;
+    // Le capteur envoie toutes les ~8s : 5 min de silence est deja anormal
+    // (avant : 25s, beaucoup trop strict, un capteur bien vivant clignotait
+    // "hors ligne" au moindre leger decalage reseau).
+    $offlineThreshold = 300;
 
     if ($dtStr) {
       $ts = strtotime($dtStr);
@@ -928,15 +933,14 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     <h3>Paramètres des cuves</h3>
     <div class="popup-scroll">
       <div id="paramContainer">Chargement...</div>
-      <p style="margin-top:14px;border-top:1px solid #2a2a2a;padding-top:10px;">
-        <button type="button" onclick="document.getElementById('paramPopup').style.display='none';document.getElementById('restore-modal-cuves').style.display='flex';">
-          Restaurer une sauvegarde…
-        </button>
-      </p>
     </div>
     <div class="popup-footer">
       <button class="save-btn" onclick="saveConfig()">💾 Enregistrer les modifications</button>
       <button onclick="hideParamPopup()">Fermer</button>
+      <button type="button" class="restore-link-btn"
+              onclick="document.getElementById('paramPopup').style.display='none';document.getElementById('restore-modal-cuves').style.display='flex';">
+        🗄️ Restaurer une sauvegarde…
+      </button>
     </div>
   </div>
 </div>
@@ -1311,13 +1315,26 @@ initHistoryToggle();
 
         <?php if (!empty($roadmap['manuel'])): ?>
             <h3>Ajouts manuels</h3>
-            <?php foreach ($roadmap['manuel'] as $item): ?>
+            <?php foreach ($roadmap['manuel'] as $item):
+                $itemId = htmlspecialchars((string)($item['id'] ?? ''), ENT_QUOTES, 'UTF-8');
+            ?>
                 <div class="roadmap-item manuel">
-                    <div class="titre"><?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="titre">
+                        <?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
+                        <button type="button" class="edit-link" onclick="document.getElementById('edit-form-<?php echo $itemId; ?>').style.display='flex'">✏️ Modifier</button>
+                    </div>
                     <?php if (!empty($item['description'])): ?>
                         <div class="desc"><?php echo nl2br(htmlspecialchars((string)$item['description'], ENT_QUOTES, 'UTF-8')); ?></div>
                     <?php endif; ?>
                     <div class="date">Ajouté le <?php echo htmlspecialchars((string)($item['date'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+
+                    <form class="roadmap-form" id="edit-form-<?php echo $itemId; ?>" method="post" action="/shared/roadmap_edit.php" style="display:none;margin-top:8px;">
+                        <input type="hidden" name="id" value="<?php echo $itemId; ?>">
+                        <input type="hidden" name="redirect" value="/cuves/index.php">
+                        <input type="text" name="titre" value="<?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required maxlength="200">
+                        <textarea name="description"><?php echo htmlspecialchars((string)($item['description'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></textarea>
+                        <button type="submit">Enregistrer la modification</button>
+                    </form>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>

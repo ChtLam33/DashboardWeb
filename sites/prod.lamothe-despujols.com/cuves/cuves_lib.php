@@ -61,6 +61,25 @@ function dbConnectCuves(): PDO {
             position INTEGER NOT NULL DEFAULT 0
         )');
 
+        // "last_*" : dernier etat connu du capteur, mis a jour a CHAQUE
+        // reception (toutes les ~8s), independamment de "mesures" ci-dessous
+        // qui elle est volontairement throttlee. Separe "le capteur est-il
+        // en ligne / que vaut-il maintenant" (toujours frais) de "faut-il
+        // garder une trace historique de cette valeur" (rarement vrai) -
+        // voir insertCuveMeasurementIfNeeded().
+        $configCols = $pdo->query('PRAGMA table_info(config)')->fetchAll(PDO::FETCH_COLUMN, 1);
+        foreach ([
+            'last_distance_cm' => 'INTEGER',
+            'last_rssi'        => 'INTEGER',
+            'last_fw'          => 'TEXT',
+            'last_seen_ts'     => 'INTEGER',
+            'last_date_iso'    => 'TEXT',
+        ] as $col => $type) {
+            if (!in_array($col, $configCols, true)) {
+                $pdo->exec("ALTER TABLE config ADD COLUMN $col $type");
+            }
+        }
+
         $pdo->exec('CREATE TABLE IF NOT EXISTS history_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts INTEGER NOT NULL,
@@ -138,35 +157,82 @@ function interpretCuve(int $distanceRaw, array $config): array {
     ];
 }
 
+/**
+ * Mesure incoherente (couvercle/obstacle probable) : la distance brute
+ * est plus petite que la hauteur max liquide configuree, donc le capteur
+ * "voit" quelque chose au-dessus du niveau plein attendu. Meme regle que
+ * l'avertissement affiche sur le dashboard (index.php).
+ */
+function isCuveMeasurementIncoherent(int $distanceRaw, array $config): bool {
+    $hauteurMaxLiquide = (float)($config['hauteur_max_liquide'] ?? 50);
+    return $distanceRaw < $hauteurMaxLiquide;
+}
+
 /* =========================================================
    MESURES
+   - "config.last_*" (mis a jour a CHAQUE reception, ~toutes les 8s) sert
+     de source pour "le capteur est en ligne / que vaut-il maintenant".
+   - "mesures" (throttlee) ne sert qu'a garder un historique exploitable
+     plus tard, sans exploser en dizaines de milliers de lignes quasi
+     identiques pour une cuve dont le niveau ne bouge pas. Une nouvelle
+     ligne n'est ecrite que si la distance a change de facon significative
+     OU si trop de temps s'est ecoule depuis la derniere ligne enregistree
+     (garde un point de repere meme quand rien ne change).
    ========================================================= */
+const CUVE_CHANGE_THRESHOLD_CM = 2;      // en dessous, on considere que c'est du bruit capteur
+const CUVE_HEARTBEAT_SECONDS   = 3600;   // au moins un point d'historique par heure
+
+/**
+ * Met a jour le "dernier etat connu" du capteur (config.last_*) - appele
+ * a CHAQUE reception, meme quand aucune ligne "mesures" n'est ecrite.
+ */
+function updateCuveLastSeen(string $sensorId, int $distanceCm, ?int $rssi, ?string $fw, int $ts, string $dateIso): void {
+    $pdo = dbConnectCuves();
+    $stmt = $pdo->prepare(
+        'UPDATE config SET last_distance_cm = ?, last_rssi = ?, last_fw = ?, last_seen_ts = ?, last_date_iso = ? WHERE sensor_id = ?'
+    );
+    $stmt->execute([$distanceCm, $rssi, $fw, $ts, $dateIso, $sensorId]);
+}
+
+/**
+ * Ecrit une ligne "mesures" seulement si necessaire (voir constantes
+ * ci-dessus). Retourne true si une ligne a effectivement ete ecrite.
+ */
+function insertCuveMeasurementIfNeeded(string $sensorId, int $distanceCm, ?int $rssi, ?string $fw, int $ts, string $dateIso): bool {
+    $pdo = dbConnectCuves();
+    $stmt = $pdo->prepare('SELECT distance_cm, ts FROM mesures WHERE sensor_id = ? ORDER BY ts DESC LIMIT 1');
+    $stmt->execute([$sensorId]);
+    $last = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $shouldRecord = true;
+    if ($last !== false) {
+        $delta = abs($distanceCm - (int)$last['distance_cm']);
+        $age   = $ts - (int)$last['ts'];
+        $shouldRecord = ($delta >= CUVE_CHANGE_THRESHOLD_CM) || ($age >= CUVE_HEARTBEAT_SECONDS);
+    }
+
+    if (!$shouldRecord) {
+        return false;
+    }
+
+    $insert = $pdo->prepare(
+        'INSERT INTO mesures (sensor_id, distance_cm, rssi, fw, ts, date_iso) VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    $insert->execute([$sensorId, $distanceCm, $rssi, $fw, $ts, $dateIso]);
+    return true;
+}
+
+/**
+ * Insertion inconditionnelle (utilisee uniquement par le script de
+ * migration, pour importer les mesures historiques sans passer par le
+ * throttling ci-dessus).
+ */
 function insertCuveMeasurement(string $sensorId, int $distanceCm, ?int $rssi, ?string $fw, int $ts, string $dateIso): void {
     $pdo = dbConnectCuves();
     $stmt = $pdo->prepare(
         'INSERT INTO mesures (sensor_id, distance_cm, rssi, fw, ts, date_iso) VALUES (?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([$sensorId, $distanceCm, $rssi, $fw, $ts, $dateIso]);
-}
-
-/**
- * Une ligne par capteur : la mesure la plus recente. Cle = sensor_id.
- */
-function getLatestCuveMeasurements(): array {
-    $pdo = dbConnectCuves();
-    $rows = $pdo->query(
-        'SELECT m.sensor_id, m.distance_cm, m.rssi, m.fw, m.ts, m.date_iso
-         FROM mesures m
-         INNER JOIN (
-             SELECT sensor_id, MAX(ts) AS max_ts FROM mesures GROUP BY sensor_id
-         ) last ON last.sensor_id = m.sensor_id AND last.max_ts = m.ts'
-    )->fetchAll(PDO::FETCH_ASSOC);
-
-    $out = [];
-    foreach ($rows as $r) {
-        $out[$r['sensor_id']] = $r;
-    }
-    return $out;
 }
 
 /* =========================================================
@@ -209,16 +275,41 @@ function ensureCuveConfigExists(string $sensorId, string $nomCuve): void {
  * Remplace entierement la config (meme comportement que l'ancien
  * save_config.php : le client envoie le tableau complet). "position"
  * = index dans le tableau recu.
+ *
+ * IMPORTANT : passe par un UPSERT (pas DELETE+INSERT) pour ne jamais
+ * toucher aux colonnes "last_*" (dernier etat connu du capteur) - un
+ * DELETE+INSERT les aurait remises a NULL a chaque sauvegarde de
+ * parametres, faisant croire que tous les capteurs viennent de
+ * disparaitre jusqu'a leur prochaine mesure.
+ *
+ * Declenche aussi une sauvegarde automatique si le lot d'au moins un
+ * capteur a change (voir createCuvesBackupNow()) - un changement de lot
+ * marque un evenement metier important (soutirage, assemblage...).
  */
 function saveCuvesConfig(array $entries): array {
     $pdo = dbConnectCuves();
+
+    $oldLotById = [];
+    foreach ($pdo->query('SELECT sensor_id, lot FROM config') as $r) {
+        $oldLotById[$r['sensor_id']] = $r['lot'];
+    }
+
     $pdo->beginTransaction();
-    $pdo->exec('DELETE FROM config');
     $stmt = $pdo->prepare(
         'INSERT INTO config (sensor_id, nom_cuve, lot, hauteur_capteur_fond, hauteur_max_liquide, diametre_cuve, ajustement_hl, couleur, position)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(sensor_id) DO UPDATE SET
+            nom_cuve = excluded.nom_cuve,
+            lot = excluded.lot,
+            hauteur_capteur_fond = excluded.hauteur_capteur_fond,
+            hauteur_max_liquide = excluded.hauteur_max_liquide,
+            diametre_cuve = excluded.diametre_cuve,
+            ajustement_hl = excluded.ajustement_hl,
+            couleur = excluded.couleur,
+            position = excluded.position'
     );
     $saved = [];
+    $submittedIds = [];
     foreach ($entries as $i => $e) {
         $sensorId = trim((string)($e['id'] ?? ''));
         if ($sensorId === '') continue;
@@ -235,8 +326,36 @@ function saveCuvesConfig(array $entries): array {
         ];
         $stmt->execute(array_values($row));
         $saved[] = $row;
+        $submittedIds[] = $sensorId;
     }
+
+    // Retire les capteurs qui ne sont plus dans le tableau soumis (le
+    // client envoie toujours l'etat complet voulu)
+    if (!empty($submittedIds)) {
+        $placeholders = implode(',', array_fill(0, count($submittedIds), '?'));
+        $pdo->prepare("DELETE FROM config WHERE sensor_id NOT IN ($placeholders)")->execute($submittedIds);
+    } else {
+        $pdo->exec('DELETE FROM config');
+    }
+
     $pdo->commit();
+
+    $lotChanged = false;
+    foreach ($saved as $row) {
+        $old = $oldLotById[$row['sensor_id']] ?? null;
+        if ($old !== null && $old !== $row['lot']) {
+            $lotChanged = true;
+            break;
+        }
+    }
+    if ($lotChanged) {
+        try {
+            createCuvesBackupNow();
+        } catch (\Throwable $e) {
+            error_log('[cuves] backup sur changement de lot echoue : ' . $e->getMessage());
+        }
+    }
+
     return $saved;
 }
 

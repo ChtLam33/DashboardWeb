@@ -679,6 +679,8 @@ $modeBanner = implode(' • ', $modeParts);
         .roadmap-item .desc{color:#9ca3af;font-size:.8rem;margin-top:.2rem;line-height:1.4;}
         .roadmap-item.manuel{border-left-color:#f3d26b;background:rgba(243,210,107,0.06);}
         .roadmap-item .date{color:#6b7280;font-size:.72rem;margin-top:.3rem;}
+        .roadmap-item .edit-link{background:none;border:none;color:#6b7280;font-size:.72rem;cursor:pointer;padding:0 0 0 8px;text-decoration:underline;}
+        .roadmap-item .edit-link:hover{color:#f3d26b;}
         .roadmap-form{margin-top:.8rem;display:flex;flex-direction:column;gap:6px;}
         .roadmap-form input, .roadmap-form textarea{background:#0b0e13;border:1px solid #444;border-radius:4px;color:#f5f5f5;padding:6px 8px;font-size:.85rem;font-family:inherit;}
         .roadmap-form textarea{min-height:50px;resize:vertical;}
@@ -1241,13 +1243,26 @@ $modeBanner = implode(' • ', $modeParts);
 
         <?php if (!empty($roadmap['manuel'])): ?>
             <h3>Ajouts manuels</h3>
-            <?php foreach ($roadmap['manuel'] as $item): ?>
+            <?php foreach ($roadmap['manuel'] as $item):
+                $itemId = htmlspecialchars((string)($item['id'] ?? ''), ENT_QUOTES, 'UTF-8');
+            ?>
                 <div class="roadmap-item manuel">
-                    <div class="titre"><?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="titre">
+                        <?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
+                        <button type="button" class="edit-link" onclick="document.getElementById('edit-form-<?php echo $itemId; ?>').style.display='flex'">✏️ Modifier</button>
+                    </div>
                     <?php if (!empty($item['description'])): ?>
                         <div class="desc"><?php echo nl2br(htmlspecialchars((string)$item['description'], ENT_QUOTES, 'UTF-8')); ?></div>
                     <?php endif; ?>
                     <div class="date">Ajouté le <?php echo htmlspecialchars((string)($item['date'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+
+                    <form class="roadmap-form" id="edit-form-<?php echo $itemId; ?>" method="post" action="/shared/roadmap_edit.php" style="display:none;margin-top:8px;">
+                        <input type="hidden" name="id" value="<?php echo $itemId; ?>">
+                        <input type="hidden" name="redirect" value="/barriques/">
+                        <input type="text" name="titre" value="<?php echo htmlspecialchars((string)($item['titre'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required maxlength="200">
+                        <textarea name="description"><?php echo htmlspecialchars((string)($item['description'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></textarea>
+                        <button type="submit">Enregistrer la modification</button>
+                    </form>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>

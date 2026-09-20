@@ -28,19 +28,17 @@ if ($id !== '') {
         echo json_encode(["error" => "Aucune configuration trouvée pour $id"]);
         exit;
     }
-    echo json_encode(cuveConfigRowToApi($row), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    echo json_encode(cuveConfigRowToApi($row, $row['last_fw'] ?? ''), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 // --- Sinon, renvoyer tout le tableau (pour le dashboard), enrichi de la
-//     derniere version firmware connue par capteur ---
-$latest = getLatestCuveMeasurements();
+//     derniere version firmware connue par capteur (config.last_fw) ---
 $config = getCuvesConfig();
 
 $out = [];
 foreach ($config as $row) {
-    $fw = $latest[$row['sensor_id']]['fw'] ?? '';
-    $out[] = cuveConfigRowToApi($row, $fw);
+    $out[] = cuveConfigRowToApi($row, $row['last_fw'] ?? '');
 }
 
 echo json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
