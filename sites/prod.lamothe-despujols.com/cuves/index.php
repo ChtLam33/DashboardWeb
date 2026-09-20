@@ -683,10 +683,16 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 
     $ageSec     = null;
     $isOffline  = false;
+    $isStale    = false;
     // Le capteur envoie toutes les ~8s : 5 min de silence est deja anormal
     // (avant : 25s, beaucoup trop strict, un capteur bien vivant clignotait
     // "hors ligne" au moindre leger decalage reseau).
     $offlineThreshold = 300;
+    // Etat intermediaire (demande utilisateur) : entre 1 min et 5 min, le
+    // capteur n'est pas "hors ligne" mais la mesure affichee n'est plus
+    // toute fraiche non plus - utile quand on surveille un remplissage de
+    // pres et qu'on veut savoir si la valeur vue est fiable a l'instant T.
+    $staleThreshold = 60;
 
     if ($dtStr) {
       $ts = strtotime($dtStr);
@@ -695,6 +701,8 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         if ($ageSec < 0) $ageSec = 0;
         if ($ageSec > $offlineThreshold) {
           $isOffline = true;
+        } elseif ($ageSec > $staleThreshold) {
+          $isStale = true;
         }
       }
     }
@@ -797,6 +805,9 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
             } else {
               echo 'RSSI indisponible';
             }
+            if ($isStale && $dtStr) {
+              echo ' – en retard de mesure ('.htmlspecialchars($dtStr).')';
+            }
           }
         ?>"></span>
       <div class="title-block">
@@ -840,6 +851,10 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
       <?php if($isOffline && $dtStr): ?>
         <div class="muted" style="font-size:.75rem;color:#ff6b6b;">
           ⚠ Capteur hors ligne – dernière mesure : <?= htmlspecialchars($dtStr) ?>
+        </div>
+      <?php elseif($isStale && $dtStr): ?>
+        <div class="muted" style="font-size:.75rem;color:#ffd54f;">
+          ⏱ Capteur en retard de mesure – dernière : <?= htmlspecialchars($dtStr) ?>
         </div>
       <?php endif; ?>
     </div>
