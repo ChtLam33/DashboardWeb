@@ -549,34 +549,17 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .history-details td{
   background:#151515;
 }
-.history-lots-inner{
-  width:100%;
-  border-collapse:collapse;
-  font-size:.8rem;
+/* Detail (lot / cuve) = lignes normales du MEME tableau, pas des
+   sous-tableaux a part - garantit que la colonne Volume (HL) tombe
+   exactement sous celle de la ligne date, quel que soit le niveau.
+   Seule l'indentation de la 1ere colonne texte marque la hierarchie. */
+.history-child td{
+  background:#151515;
+  font-size:.85em;
+  color:#ccc;
 }
-.history-lots-inner th, .history-lots-inner td{
-  padding:3px 4px;
-  border-bottom:1px solid #2a2a2a;
-}
-/* Colonne Volume alignee a droite dans les deux tableaux (lot ET detail
-   par cuve) : les deux tableaux partagent le meme bord droit (le detail
-   par cuve n'est retreci que par une marge a GAUCHE), donc aligner le
-   texte a droite fait coincider les deux colonnes malgre des largeurs
-   de colonnes differentes (auto-layout, pas les memes intitules). */
-.history-lots-inner td:last-child, .history-lots-inner th:last-child{
-  text-align:right;
-}
-.history-cuves-inner{
-  border-collapse:collapse;
-  font-size:.78rem;
-  margin:2px 0 2px 20px;
-  width:calc(100% - 20px);
-}
-.history-cuves-inner th, .history-cuves-inner td{
-  padding:2px 4px;
-  border-bottom:1px solid #262626;
-  color:#bbb;
-}
+.history-child .indent-1{ padding-left:22px; }
+.history-child .indent-2{ padding-left:38px; color:#aaa; }
 .history-cuves-inner td:last-child{
   text-align:right;
 }
@@ -910,57 +893,33 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         $snapComment = isset($snap['comment']) ? $snap['comment'] : '';
         $snapLots = (isset($snap['lots']) && is_array($snap['lots'])) ? $snap['lots'] : [];
       ?>
-      <tr class="history-row" data-details-id="<?= htmlspecialchars($rowId) ?>">
-        <td class="history-toggle">+</td>
+      <tr>
+        <td class="history-toggle"<?= !empty($snapLots) ? ' data-toggle-group="'.htmlspecialchars($rowId).'"' : '' ?>><?= !empty($snapLots) ? '+' : '' ?></td>
         <td><?= htmlspecialchars($snapDate) ?></td>
         <td><?= nf($snapTotal, 2) ?></td>
         <td><?= htmlspecialchars($snapComment) ?></td>
       </tr>
-      <?php if (!empty($snapLots)): ?>
-      <tr class="history-details" id="<?= htmlspecialchars($rowId) ?>" style="display:none;">
-        <td colspan="4">
-          <table class="history-lots-inner">
-            <thead>
-              <tr>
-                <th style="width:24px;"></th>
-                <th>Lot</th>
-                <th>Volume (HL)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($snapLots as $lotIdx => $lotInfo):
-                $hLotName  = isset($lotInfo['lot']) ? $lotInfo['lot'] : '';
-                $hLotVol   = isset($lotInfo['volume_hl']) ? $lotInfo['volume_hl'] : null;
-                $hLotCuves = (isset($lotInfo['cuves']) && is_array($lotInfo['cuves'])) ? $lotInfo['cuves'] : [];
-                $lotRowId  = $rowId . '-lot' . $lotIdx;
-              ?>
-              <tr class="history-row"<?= !empty($hLotCuves) ? ' data-details-id="'.htmlspecialchars($lotRowId).'"' : '' ?>>
-                <td class="history-toggle"><?= !empty($hLotCuves) ? '+' : '' ?></td>
-                <td><?= htmlspecialchars($hLotName) ?></td>
-                <td><?= nf($hLotVol, 2) ?></td>
-              </tr>
-              <?php if (!empty($hLotCuves)): ?>
-              <tr class="history-details" id="<?= htmlspecialchars($lotRowId) ?>" style="display:none;">
-                <td colspan="3">
-                  <table class="history-cuves-inner">
-                    <tbody>
-                      <?php foreach ($hLotCuves as $cuveInfo): ?>
-                      <tr>
-                        <td><?= htmlspecialchars($cuveInfo['nom_cuve'] ?? '') ?></td>
-                        <td><?= nf($cuveInfo['volume_hl'] ?? null, 2) ?></td>
-                      </tr>
-                      <?php endforeach; ?>
-                    </tbody>
-                  </table>
-                </td>
-              </tr>
-              <?php endif; ?>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
-        </td>
+      <?php foreach ($snapLots as $lotIdx => $lotInfo):
+        $hLotName  = isset($lotInfo['lot']) ? $lotInfo['lot'] : '';
+        $hLotVol   = isset($lotInfo['volume_hl']) ? $lotInfo['volume_hl'] : null;
+        $hLotCuves = (isset($lotInfo['cuves']) && is_array($lotInfo['cuves'])) ? $lotInfo['cuves'] : [];
+        $lotRowId  = $rowId . '-lot' . $lotIdx;
+      ?>
+      <tr class="history-child" data-parent="<?= htmlspecialchars($rowId) ?>" style="display:none;">
+        <td class="history-toggle"<?= !empty($hLotCuves) ? ' data-toggle-group="'.htmlspecialchars($lotRowId).'"' : '' ?>><?= !empty($hLotCuves) ? '+' : '' ?></td>
+        <td class="indent-1"><?= htmlspecialchars($hLotName) ?></td>
+        <td><?= nf($hLotVol, 2) ?></td>
+        <td></td>
       </tr>
-      <?php endif; ?>
+      <?php foreach ($hLotCuves as $cuveInfo): ?>
+      <tr class="history-child" data-parent="<?= htmlspecialchars($lotRowId) ?>" style="display:none;">
+        <td class="history-toggle"></td>
+        <td class="indent-2"><?= htmlspecialchars($cuveInfo['nom_cuve'] ?? '') ?></td>
+        <td><?= nf($cuveInfo['volume_hl'] ?? null, 2) ?></td>
+        <td></td>
+      </tr>
+      <?php endforeach; ?>
+      <?php endforeach; ?>
       <?php endforeach; ?>
     </tbody>
   </table>
@@ -1312,19 +1271,18 @@ async function saveNewOrder(){
   }
 }
 
-// --- Toggle historique (afficher / masquer les détails par lot) ---
+// --- Toggle historique (afficher / masquer les lignes lot / cuve) ---
+// Chaque niveau (date -> lot -> cuve) est une ligne normale du meme
+// tableau (voir index.php) : une cellule "data-toggle-group" affiche ou
+// masque toutes les lignes portant "data-parent" egal a ce groupe.
 function initHistoryToggle(){
-  const rows = document.querySelectorAll('.history-row');
-  rows.forEach(row=>{
-    const toggleCell = row.querySelector('.history-toggle');
-    if(!toggleCell) return;
+  document.querySelectorAll('[data-toggle-group]').forEach(toggleCell=>{
     toggleCell.addEventListener('click', ()=>{
-      const id = row.dataset.detailsId;
-      if(!id) return;
-      const details = document.getElementById(id);
-      if(!details) return;
-      const isHidden = (details.style.display === 'none' || details.style.display === '');
-      details.style.display = isHidden ? 'table-row' : 'none';
+      const group = toggleCell.dataset.toggleGroup;
+      const children = document.querySelectorAll('[data-parent="'+group+'"]');
+      if(!children.length) return;
+      const isHidden = (children[0].style.display === 'none' || children[0].style.display === '');
+      children.forEach(row => { row.style.display = isHidden ? 'table-row' : 'none'; });
       toggleCell.textContent = isHidden ? '−' : '+';
     });
   });
