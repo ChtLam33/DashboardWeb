@@ -308,6 +308,30 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   width:100%;
   height:100%;
 }
+/* Couvercle graphique quand une mesure incoherente est detectee (demande
+   utilisateur) : simule visuellement le "couvercle ou obstacle possible"
+   deja mentionne dans le message texte - une ellipse posee sur le dessus
+   du liquide, avec une petite poignee. Reste dans les bornes de .bar
+   (qui a overflow:hidden) pour ne pas etre rogne. */
+.cuve-lid{
+  /* top decale pour laisser la place a la poignee (::knob, positionnee
+     au-dessus en negatif) sans se faire rogner par overflow:hidden sur .bar */
+  position:absolute;
+  top:9px; left:8%;
+  width:84%; height:16px;
+  background:linear-gradient(180deg,#a1887f,#6d4c41);
+  border-radius:50%;
+  box-shadow:0 2px 3px rgba(0,0,0,.5);
+  z-index:6;
+}
+.cuve-lid-knob{
+  position:absolute;
+  top:-6px; left:50%;
+  width:12px; height:8px;
+  background:#6d4c41;
+  border-radius:4px 4px 2px 2px;
+  transform:translateX(-50%);
+}
 .reflet{
   position:absolute;
   top:0;
@@ -408,10 +432,11 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 }
 .popup-content{
   background:#101010;color:#eee;padding:16px;border-radius:12px;
-  /* max-width > min-width de .param-table (820px) + padding, sinon la
-     barre de defilement horizontale apparaissait meme sur grand ecran
-     avec largement la place. */
-  width:90%;max-width:900px;border:1px solid #2a2a2a;
+  /* max-width > min-width de .param-table (865px, colonne suppression
+     comprise) + padding (32px) + marge pour une eventuelle barre de
+     defilement verticale (~17px) - sinon la barre horizontale
+     reapparaissait meme sur grand ecran avec largement la place. */
+  width:90%;max-width:960px;border:1px solid #2a2a2a;
   max-height:90vh;
   display:flex;flex-direction:column;
 }
@@ -844,6 +869,11 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     <div class="bar">
       <canvas class="canvas-wave"></canvas>
       <div class="reflet"></div>
+      <?php if ($hasObstacle): ?>
+        <div class="cuve-lid" title="Mesure incohérente : couvercle ou obstacle possible<?= $obstacleMsg ?>">
+          <div class="cuve-lid-knob"></div>
+        </div>
+      <?php endif; ?>
     </div>
 
     <div class="infos">
