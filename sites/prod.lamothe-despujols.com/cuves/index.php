@@ -22,6 +22,15 @@ function valf($arr, $key, $default = null) {
 function nf($v, $dec = 1) {
     return is_numeric($v) ? number_format((float)$v, $dec, ',', '') : '';
 }
+// Meme couleurs que sur les vignettes cuve (avertissement "mesure
+// incohérente" / "capteur hors ligne") - reutilisees dans l'historique
+// des instantanés pour reperer d'un coup d'oeil les lignes dont le
+// volume enregistre est potentiellement perime/faux.
+function historyAnomalyColor(bool $hasOffline, bool $hasIncoherent): string {
+    if ($hasOffline) return '#ff6b6b';
+    if ($hasIncoherent) return '#ffb74d';
+    return '';
+}
 
 // --- Charger la config depuis SQLite (toujours a jour, plus de fichier de
 //     cache intermediaire a regenerer). "last_*" = dernier etat connu du
@@ -552,18 +561,20 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 /* Detail (lot / cuve) = lignes normales du MEME tableau, pas des
    sous-tableaux a part - garantit que la colonne Volume (HL) tombe
    exactement sous celle de la ligne date, quel que soit le niveau.
-   Seule l'indentation de la 1ere colonne texte marque la hierarchie. */
+   Seule l'indentation de la 1ere colonne texte marque la hierarchie.
+   Couleur posee sur la ligne (pas sur chaque td) : un style inline sur
+   la MEME ligne (anomalie "hors ligne"/"mesure incohérente", voir
+   historyAnomalyColor() dans le PHP) la surcharge alors automatiquement,
+   pas besoin de dupliquer la couleur sur chaque cellule. */
+.history-child{
+  color:#ccc;
+}
 .history-child td{
   background:#151515;
   font-size:.85em;
-  color:#ccc;
 }
 .history-child .indent-1{ padding-left:22px; }
-.history-child .indent-2{ padding-left:38px; color:#aaa; }
-.history-warning{ color:#ffb74d; }
-.history-cuves-inner td:last-child{
-  text-align:right;
-}
+.history-child .indent-2{ padding-left:38px; }
 
 .roadmap-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:1000;}
 .roadmap-content{background:#111;border:1px solid #444;border-radius:8px;min-width:280px;max-width:520px;width:92%;max-height:85vh;color:#ddd;box-shadow:0 0 20px rgba(0,0,0,.6);display:flex;flex-direction:column;}
@@ -893,8 +904,28 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         $snapTotal = isset($snap['total_hl']) ? $snap['total_hl'] : null;
         $snapComment = isset($snap['comment']) ? $snap['comment'] : '';
         $snapLots = (isset($snap['lots']) && is_array($snap['lots'])) ? $snap['lots'] : [];
+
+        // Pre-scan : repere les anomalies par lot, puis pour l'instantane
+        // entier, AVANT le rendu (la ligne date/la ligne lot doivent
+        // deja connaitre l'etat de leurs cuves au moment ou on les affiche).
+        $snapHasOffline = false;
+        $snapHasIncoherent = false;
+        foreach ($snapLots as $lotIdx => &$lotInfoRef) {
+            $lotHasOffline = false;
+            $lotHasIncoherent = false;
+            foreach (($lotInfoRef['cuves'] ?? []) as $c) {
+                if (($c['status'] ?? '') === 'offline') $lotHasOffline = true;
+                elseif (($c['status'] ?? '') === 'incoherent') $lotHasIncoherent = true;
+            }
+            $lotInfoRef['_hasOffline'] = $lotHasOffline;
+            $lotInfoRef['_hasIncoherent'] = $lotHasIncoherent;
+            if ($lotHasOffline) $snapHasOffline = true;
+            if ($lotHasIncoherent) $snapHasIncoherent = true;
+        }
+        unset($lotInfoRef);
+        $snapColor = historyAnomalyColor($snapHasOffline, $snapHasIncoherent);
       ?>
-      <tr>
+      <tr<?= $snapColor !== '' ? ' style="color:'.$snapColor.';"' : '' ?>>
         <td class="history-toggle"<?= !empty($snapLots) ? ' data-toggle-group="'.htmlspecialchars($rowId).'"' : '' ?>><?= !empty($snapLots) ? '+' : '' ?></td>
         <td><?= htmlspecialchars($snapDate) ?></td>
         <td><?= nf($snapTotal, 2) ?></td>
@@ -905,21 +936,24 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         $hLotVol   = isset($lotInfo['volume_hl']) ? $lotInfo['volume_hl'] : null;
         $hLotCuves = (isset($lotInfo['cuves']) && is_array($lotInfo['cuves'])) ? $lotInfo['cuves'] : [];
         $lotRowId  = $rowId . '-lot' . $lotIdx;
+        $lotColor  = historyAnomalyColor(!empty($lotInfo['_hasOffline']), !empty($lotInfo['_hasIncoherent']));
       ?>
-      <tr class="history-child" data-parent="<?= htmlspecialchars($rowId) ?>" style="display:none;">
+      <tr class="history-child" data-parent="<?= htmlspecialchars($rowId) ?>" style="display:none;<?= $lotColor !== '' ? 'color:'.$lotColor.';' : '' ?>">
         <td class="history-toggle"<?= !empty($hLotCuves) ? ' data-toggle-group="'.htmlspecialchars($lotRowId).'"' : '' ?>><?= !empty($hLotCuves) ? '+' : '' ?></td>
         <td class="indent-1"><?= htmlspecialchars($hLotName) ?></td>
         <td><?= nf($hLotVol, 2) ?></td>
         <td></td>
       </tr>
       <?php foreach ($hLotCuves as $cuveInfo):
+        $cuveStatus = (string)($cuveInfo['status'] ?? '');
         $cuveStatusLabel = isset($cuveInfo['status_label']) ? (string)$cuveInfo['status_label'] : '';
+        $cuveColor = historyAnomalyColor($cuveStatus === 'offline', $cuveStatus === 'incoherent');
       ?>
-      <tr class="history-child" data-parent="<?= htmlspecialchars($lotRowId) ?>" style="display:none;">
+      <tr class="history-child" data-parent="<?= htmlspecialchars($lotRowId) ?>" style="display:none;<?= $cuveColor !== '' ? 'color:'.$cuveColor.';' : '' ?>">
         <td class="history-toggle"></td>
         <td class="indent-2"><?= htmlspecialchars($cuveInfo['nom_cuve'] ?? '') ?></td>
         <td><?= nf($cuveInfo['volume_hl'] ?? null, 2) ?></td>
-        <td<?= $cuveStatusLabel !== '' ? ' class="history-warning"' : '' ?>><?= $cuveStatusLabel !== '' ? '⚠ '.htmlspecialchars($cuveStatusLabel) : '' ?></td>
+        <td><?= $cuveStatusLabel !== '' ? '⚠ '.htmlspecialchars($cuveStatusLabel) : '' ?></td>
       </tr>
       <?php endforeach; ?>
       <?php endforeach; ?>
