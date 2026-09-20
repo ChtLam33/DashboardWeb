@@ -4,5 +4,10 @@
     Require all denied
 </FilesMatch>
 
+# Idem pour la base SQLite et ses fichiers annexes (WAL/SHM) et les sauvegardes
+<FilesMatch "\.sqlite(-wal|-shm)?$">
+    Require all denied
+</FilesMatch>
+
 # Empeche le listing du contenu du dossier si aucun index n'est present
 Options -Indexes

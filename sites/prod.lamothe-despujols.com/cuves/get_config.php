@@ -1,53 +1,46 @@
 <?php
 // get_config.php — renvoie la configuration complète ou celle d'un ID spécifique
+// (migration SQLite : lit la table config au lieu de config_cuves.json)
+require __DIR__ . '/cuves_lib.php';
 header("Content-Type: application/json; charset=utf-8");
-require __DIR__ . '/lock_lib.php';
 
-$file = __DIR__ . "/config_cuves.json";
-$raw  = lockedRead($file);
-if ($raw === null) {
-    echo json_encode(["error" => "Fichier config_cuves.json introuvable"]);
-    exit;
+function cuveConfigRowToApi(array $row, ?string $fw = null): array {
+    return [
+        "id"                 => $row['sensor_id'],
+        "nomCuve"            => $row['nom_cuve'],
+        "lot"                => $row['lot'],
+        "hauteurCapteurFond" => (float)$row['hauteur_capteur_fond'],
+        "hauteurMaxLiquide"  => (float)$row['hauteur_max_liquide'],
+        "diametreCuve"       => (float)$row['diametre_cuve'],
+        "AjustementHL"       => (float)$row['ajustement_hl'],
+        "couleur"            => $row['couleur'],
+        "fw"                 => $fw ?? '',
+    ];
 }
 
-$config = json_decode($raw, true);
-if (!$config) {
-    echo json_encode(["error" => "Fichier config_cuves.json invalide"]);
-    exit;
-}
-
-// --- Si un ID est passé dans l'URL, renvoyer uniquement cet élément ---
 $id = $_GET['id'] ?? '';
+
+// --- Si un ID est passé dans l'URL (utilisé par le firmware), renvoyer
+//     uniquement cet élément - format inchangé pour ne pas risquer l'OTA ---
 if ($id !== '') {
-    foreach ($config as $cuve) {
-        if ($cuve['id'] === $id) {
-            echo json_encode($cuve, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-            exit;
-        }
+    $row = getCuveConfigById($id);
+    if ($row === null) {
+        echo json_encode(["error" => "Aucune configuration trouvée pour $id"]);
+        exit;
     }
-    echo json_encode(["error" => "Aucune configuration trouvée pour $id"]);
+    echo json_encode(cuveConfigRowToApi($row), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 // --- Sinon, renvoyer tout le tableau (pour le dashboard), enrichi de la
-//     derniere version firmware connue par capteur (cache_dashboard.json,
-//     alimente par update_cache.php a partir de data_cuves.csv) ---
-$fwById = [];
-$cacheRaw = lockedRead(__DIR__ . "/cache_dashboard.json");
-if ($cacheRaw !== null) {
-    $cacheData = json_decode($cacheRaw, true);
-    if (is_array($cacheData)) {
-        foreach ($cacheData as $c) {
-            if (isset($c['id'])) {
-                $fwById[$c['id']] = $c['fw'] ?? '';
-            }
-        }
-    }
-}
-foreach ($config as &$cuve) {
-    $cuve['fw'] = $fwById[$cuve['id'] ?? ''] ?? '';
-}
-unset($cuve);
+//     derniere version firmware connue par capteur ---
+$latest = getLatestCuveMeasurements();
+$config = getCuvesConfig();
 
-echo json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-?>
+$out = [];
+foreach ($config as $row) {
+    $fw = $latest[$row['sensor_id']]['fw'] ?? '';
+    $out[] = cuveConfigRowToApi($row, $fw);
+}
+
+echo json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);

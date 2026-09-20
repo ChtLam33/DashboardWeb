@@ -1,26 +1,19 @@
 <?php
+require __DIR__ . '/cuves_lib.php';
 require __DIR__ . '/../shared/roadmap_lib.php';
 
-// --- Lecture du CACHE JSON ---
-$cacheFile   = __DIR__ . "/cache_dashboard.json";
-$configFile  = __DIR__ . "/config_cuves.json";
-$historyFile = __DIR__ . "/history_lots.json";
-
-$cuves   = [];
-$config  = [];
-$history = [];
-$historyDisplay = [];
-
-// Charger le cache (dernières mesures)
-if (file_exists($cacheFile)) {
-    $json  = file_get_contents($cacheFile);
-    $cuves = json_decode($json, true) ?: [];
+/* =========================================================
+   0) RESTAURATION D'UNE SAUVEGARDE
+   - Traite AVANT toute autre section : aucune connexion PDO ne doit
+     etre ouverte sur cuves.sqlite avant qu'on le remplace.
+   ========================================================= */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['restore_backup'])) {
+    restoreCuvesBackup((string)$_POST['restore_backup']);
+    header('Location: index.php');
+    exit;
 }
 
-// Date/heure de dernière mise à jour du cache
-$lastUpdate = file_exists($cacheFile)
-    ? date("d/m/Y H:i:s", filemtime($cacheFile))
-    : "N/A";
+maybeRunScheduledBackupCuves();
 
 // --- Helpers ---
 function valf($arr, $key, $default = null) {
@@ -30,70 +23,68 @@ function nf($v, $dec = 1) {
     return is_numeric($v) ? number_format((float)$v, $dec, ',', '') : '';
 }
 
-// --- Charger la config (pour ordre + lot + couleur + hauteur max) ---
+// --- Charger config + dernieres mesures depuis SQLite (toujours a jour,
+//     plus de fichier de cache intermediaire a regenerer) ---
+$config = getCuvesConfig(); // deja trie par position
+$latest = getLatestCuveMeasurements();
+
 $lotById   = [];
 $colorById = [];
 $hMaxById  = [];
-$config    = [];
 
-if (file_exists($configFile)) {
-    $config = json_decode(file_get_contents($configFile), true);
-    if (!is_array($config)) $config = [];
-}
-
-// Mapping ID → lot / couleur / hauteur max (dashboard)
 foreach ($config as $cfg) {
-    if (!empty($cfg['id'])) {
-        $id = $cfg['id'];
-
-        $lotById[$id]   = isset($cfg['lot']) ? $cfg['lot'] : '';
-        $colorById[$id] = isset($cfg['couleur']) ? $cfg['couleur'] : '';
-
-        // Hauteur max liquide saisie dans le dashboard (champ "Hauteur max")
-        $hMaxById[$id]  = (isset($cfg['hauteurMaxLiquide']) && $cfg['hauteurMaxLiquide'] !== '')
-            ? (float)$cfg['hauteurMaxLiquide']
-            : null;
-    }
+    $id = $cfg['sensor_id'];
+    $lotById[$id]   = $cfg['lot'];
+    $colorById[$id] = $cfg['couleur'];
+    $hMaxById[$id]  = (float)$cfg['hauteur_max_liquide'];
 }
 
-// --- Réordonner les cuves selon l'ordre de config_cuves.json ---
-if (!empty($config) && !empty($cuves)) {
-    $orderIds = [];
-    foreach ($config as $cfg) {
-        if (!empty($cfg['id'])) {
-            $orderIds[] = $cfg['id'];
-        }
-    }
+// --- Construit $cuves (une entree par capteur, meme forme que l'ancien
+//     cache_dashboard.json avant migration SQLite), dans l'ordre de la config ---
+$cuves = [];
+foreach ($config as $cfg) {
+    $id = $cfg['sensor_id'];
+    if (!isset($latest[$id])) continue;
 
-    if (!empty($orderIds)) {
-        $byId = [];
-        $noId = [];
-        foreach ($cuves as $c) {
-            $id = isset($c['id']) ? $c['id'] : null;
-            if ($id) {
-                $byId[$id] = $c;
-            } else {
-                $noId[] = $c;
-            }
-        }
+    $m = $latest[$id];
+    $interp = interpretCuve((int)$m['distance_cm'], $cfg);
 
-        $ordered = [];
-        foreach ($orderIds as $id) {
-            if (isset($byId[$id])) {
-                $ordered[] = $byId[$id];
-                unset($byId[$id]);
-            }
-        }
-        foreach ($byId as $c) {
-            $ordered[] = $c;
-        }
-        foreach ($noId as $c) {
-            $ordered[] = $c;
-        }
-
-        $cuves = $ordered;
-    }
+    $cuves[] = [
+        "id"           => $id,
+        "cuve"         => $cfg['nom_cuve'],
+        "datetime"     => $m['date_iso'],
+        "distance_cm"  => (float)$m['distance_cm'],
+        "volume_hl"    => $interp['volume_hl'],
+        "capacite_hl"  => $interp['capacite_hl'],
+        "pourcentage"  => $interp['pourcentage'],
+        "correction"   => $interp['correction'],
+        "hauteurPlein" => $interp['hauteurPlein'],
+        "hauteurCuve"  => $interp['hauteurCuve'],
+        "rssi"         => $m['rssi'] !== null ? (int)$m['rssi'] : null,
+        "fw"           => $m['fw'] ?? '',
+    ];
 }
+
+// Capteurs qui ont deja poste une mesure mais n'ont pas (encore) de ligne
+// config (ne devrait pas arriver : ensureCuveConfigExists() les cree a la
+// premiere mesure - garde-fou au cas ou)
+$configIds = array_column($config, 'sensor_id');
+foreach ($latest as $id => $m) {
+    if (in_array($id, $configIds, true)) continue;
+    $interp = interpretCuve((int)$m['distance_cm'], []);
+    $cuves[] = [
+        "id" => $id, "cuve" => $id, "datetime" => $m['date_iso'],
+        "distance_cm" => (float)$m['distance_cm'], "volume_hl" => $interp['volume_hl'],
+        "capacite_hl" => $interp['capacite_hl'], "pourcentage" => $interp['pourcentage'],
+        "correction" => $interp['correction'], "hauteurPlein" => $interp['hauteurPlein'],
+        "hauteurCuve" => $interp['hauteurCuve'],
+        "rssi" => $m['rssi'] !== null ? (int)$m['rssi'] : null, "fw" => $m['fw'] ?? '',
+    ];
+}
+
+// La page est toujours generee a la demande (plus de cache intermediaire) :
+// l'heure affichee est simplement celle du rendu de la page.
+$lastUpdate = date("d/m/Y H:i:s");
 
 // --- Calcul des totaux par lot ---
 $lotsTotals  = [];
@@ -116,24 +107,8 @@ foreach ($cuves as $c) {
     $totalGlobal          += (float)$vol;
 }
 
-// --- Charger l'historique des snapshots ---
-if (file_exists($historyFile)) {
-    $history = json_decode(file_get_contents($historyFile), true);
-    if (!is_array($history)) {
-        $history = [];
-    }
-}
-
-// Trier par date décroissante (les plus récents d'abord)
-if (!empty($history)) {
-    usort($history, function($a, $b) {
-        $da = isset($a['datetime']) ? $a['datetime'] : '';
-        $db = isset($b['datetime']) ? $b['datetime'] : '';
-        return strcmp($db, $da); // on veut le plus récent en premier
-    });
-    // On n'affiche que les 50 plus récents
-    $historyDisplay = array_slice($history, 0, 50);
-}
+// --- Historique des snapshots (deja trie desc + limite a 50) ---
+$historyDisplay = getCuveSnapshots(50);
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -953,6 +928,11 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     <h3>Paramètres des cuves</h3>
     <div class="popup-scroll">
       <div id="paramContainer">Chargement...</div>
+      <p style="margin-top:14px;border-top:1px solid #2a2a2a;padding-top:10px;">
+        <button type="button" onclick="document.getElementById('paramPopup').style.display='none';document.getElementById('restore-modal-cuves').style.display='flex';">
+          Restaurer une sauvegarde…
+        </button>
+      </p>
     </div>
     <div class="popup-footer">
       <button class="save-btn" onclick="saveConfig()">💾 Enregistrer les modifications</button>
@@ -961,18 +941,41 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   </div>
 </div>
 
+<!-- Popup restauration d'une sauvegarde cuves.sqlite -->
+<div class="param-popup" id="restore-modal-cuves">
+  <div class="popup-content" style="max-height:60vh;">
+    <h3>Restaurer une sauvegarde</h3>
+    <div class="popup-scroll">
+      <?php $availableCuvesBackups = listAvailableCuvesBackups(); ?>
+      <?php if (empty($availableCuvesBackups)): ?>
+        <p class="muted" style="font-size:.85rem;">Aucune sauvegarde disponible pour l'instant (la première sera créée automatiquement).</p>
+      <?php else: ?>
+        <?php foreach ($availableCuvesBackups as $b): ?>
+          <form method="post" action="index.php"
+                onsubmit="return confirm('Restaurer la sauvegarde du <?php echo htmlspecialchars($b['label'], ENT_QUOTES, 'UTF-8'); ?> ?\nTout ce qui a été enregistré après cette date sera perdu (une sauvegarde de l\'état actuel sera prise avant, au cas où).');"
+                style="margin-bottom:8px;">
+            <input type="hidden" name="restore_backup" value="<?php echo htmlspecialchars($b['filename'], ENT_QUOTES, 'UTF-8'); ?>">
+            <button type="submit" style="width:100%;">Restaurer — <?php echo htmlspecialchars($b['label'], ENT_QUOTES, 'UTF-8'); ?></button>
+          </form>
+        <?php endforeach; ?>
+      <?php endif; ?>
+    </div>
+    <div class="popup-footer">
+      <button type="button" onclick="document.getElementById('restore-modal-cuves').style.display='none';">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // --- Actualisation des données ---
-async function refreshData(){
+// Depuis la migration SQLite, la page est toujours generee a jour (plus
+// de fichier de cache intermediaire a regenerer) : "Actualiser" recharge
+// simplement la page. Le petit delai + le spinner gardent le meme retour
+// visuel qu'avant pour l'utilisateur.
+function refreshData(){
   const loading=document.getElementById('loading');
   loading.style.display='block';loading.innerText="⏳ Mise à jour...";
-  try{
-    await fetch('update_config_from_csv.php?nocache='+Date.now(),{cache:"no-store"});
-    const r=await fetch('update_cache.php?nocache='+Date.now(),{cache:"no-store"});
-    const d=await r.json();
-    if(d.status==="OK"){loading.innerText="✅ Données actualisées";setTimeout(()=>location.reload(),700);}
-    else{loading.innerText="⚠️ Erreur actualisation";setTimeout(()=>loading.style.display='none',2000);}
-  }catch(e){loading.innerText="⚠️ Erreur serveur";setTimeout(()=>loading.style.display='none',2000);}
+  setTimeout(()=>location.reload(),300);
 }
 
 // --- Purge des capteurs hors ligne ---
@@ -1120,8 +1123,8 @@ async function saveConfig(){
   statusEl.textContent = "⏳ Sauvegarde en cours...";
 
   try{
-    // "fw" est une info affichee (derniere version connue via cache_dashboard.json),
-    // pas un reglage : on ne la sauvegarde pas dans config_cuves.json.
+    // "fw" est une info affichee (derniere version connue, deduite des
+    // mesures en base), pas un reglage : on ne l'envoie pas a save_config.php.
     const toSave = configData.map(({fw, ...rest}) => rest);
     const res = await fetch('save_config.php',{
       method:'POST',
