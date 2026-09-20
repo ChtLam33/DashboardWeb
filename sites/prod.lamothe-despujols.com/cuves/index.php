@@ -429,7 +429,7 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
    table est plus large que la popup et defile horizontalement (scroll)
    au lieu de compresser chaque colonne jusqu'a l'illisible (nom tronque,
    couleur/lot reduits a une lettre...). */
-.param-table{width:100%;min-width:820px;border-collapse:collapse;table-layout:fixed}
+.param-table{width:100%;min-width:865px;border-collapse:collapse;table-layout:fixed}
 .param-table th,.param-table td{
   border-bottom:1px solid #2a2a2a;padding:6px 8px;text-align:left;font-size:.9rem;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -444,6 +444,7 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .param-table th:nth-child(7),.param-table td:nth-child(7){width:90px}
 .param-table th:nth-child(8),.param-table td:nth-child(8){width:80px}
 .param-table th:nth-child(9),.param-table td:nth-child(9){width:70px}
+.param-table th:nth-child(10),.param-table td:nth-child(10){width:34px; overflow:visible;}
 .param-table input, .param-table select{
   width:100%;border:1px solid #3a3a3a;border-radius:6px;
   padding:6px;background:#0e0e0e;color:#eee;
@@ -452,12 +453,17 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 .param-table select{
   padding-right:20px;
 }
+.row-delete-btn{
+  background:transparent;border:1px solid #5a3a3a;color:#e57373;
+  border-radius:6px;padding:4px 7px;cursor:pointer;font-size:.85rem;
+}
+.row-delete-btn:hover{background:rgba(229,115,115,0.12);border-color:#e57373;}
 /* Paysage smartphone (peu de hauteur) : colonnes plus etroites pour
    limiter le scroll horizontal, tout en restant lisibles (place apres
    les regles de base pour bien les surcharger, meme specificite). */
 @media (max-height:500px){
   .popup-content{padding:10px;max-height:96vh}
-  .param-table{min-width:660px}
+  .param-table{min-width:690px}
   .param-table th,.param-table td{padding:4px 5px;font-size:.75rem}
   .param-table input,.param-table select{padding:4px;font-size:.72rem}
   .param-table th:nth-child(1),.param-table td:nth-child(1){width:78px}
@@ -469,6 +475,7 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   .param-table th:nth-child(7),.param-table td:nth-child(7){width:68px}
   .param-table th:nth-child(8),.param-table td:nth-child(8){width:60px}
   .param-table th:nth-child(9),.param-table td:nth-child(9){width:56px}
+  .param-table th:nth-child(10),.param-table td:nth-child(10){width:30px}
 }
 .popup-content button{
   background:var(--gold2);color:#000;border:none;padding:8px 14px;border-radius:8px;cursor:pointer
@@ -1134,56 +1141,76 @@ async function showParamPopup(){
     const res=await fetch('get_config.php?nocache='+Date.now());
     configData=await res.json();
     if(!Array.isArray(configData)){c.innerHTML="Erreur.";return;}
-    let html=`<table class='param-table'>
-    <tr>
-      <th>ID</th>
-      <th>Firmware</th>
-      <th>Nom</th>
-      <th>Couleur</th>
-      <th>Lot</th>
-      <th>Capteur→Fond</th>
-      <th>Hauteur max</th>
-      <th>Diamètre</th>
-      <th>Aj. HL</th>
-    </tr>`;
-    configData.forEach((cu,i)=>{
-      const col = cu.couleur ?? '';
-      html+=`<tr>
-      <td>${cu.id}</td>
-      <td>${cu.fw?cu.fw:'<span class="muted">?</span>'}</td>
-      <td><input value="${cu.nomCuve??''}" data-i="${i}" data-k="nomCuve"></td>
-      <td>
-        <select data-i="${i}" data-k="couleur">
-          <option value="" ${col===''?'selected':''}>Jaune (défaut)</option>
-          <option value="jauneClair" ${col==='jauneClair'?'selected':''}>Jaune clair</option>
-          <option value="jauneFonce" ${col==='jauneFonce'?'selected':''}>Jaune foncé</option>
-          <option value="vert" ${col==='vert'?'selected':''}>Vert</option>
-          <option value="gris" ${col==='gris'?'selected':''}>Gris</option>
-          <option value="violet" ${col==='violet'?'selected':''}>Violet</option>
-          <option value="rouge" ${col==='rouge'?'selected':''}>Rouge</option>
-          <option value="bleu" ${col==='bleu'?'selected':''}>Bleu</option>
-        </select>
-      </td>
-      <td><input value="${cu.lot??''}" data-i="${i}" data-k="lot"></td>
-      <td><input value="${cu.hauteurCapteurFond??''}" data-i="${i}" data-k="hauteurCapteurFond" type="number" step="0.1"></td>
-      <td><input value="${cu.hauteurMaxLiquide??''}" data-i="${i}" data-k="hauteurMaxLiquide" type="number" step="0.1"></td>
-      <td><input value="${cu.diametreCuve??''}" data-i="${i}" data-k="diametreCuve" type="number" step="0.1"></td>
-      <td><input value="${cu.AjustementHL??''}" data-i="${i}" data-k="AjustementHL" type="number" step="0.01"></td>
-      </tr>`;
-    });
-    html+=`</table>`;
-    c.innerHTML=html;
-    c.querySelectorAll('input,select').forEach(inp=>{
-      inp.addEventListener('input',e=>{
-        const i=e.target.dataset.i,k=e.target.dataset.k;configData[i][k]=e.target.value;
-      });
-      inp.addEventListener('change',e=>{
-        const i=e.target.dataset.i,k=e.target.dataset.k;configData[i][k]=e.target.value;
-      });
-    });
+    renderParamTable();
   }catch(e){
     c.innerHTML="Impossible de charger les paramètres.";
   }
+}
+
+// Reconstruit le tableau des paramètres à partir de configData (déjà en
+// mémoire, pas de nouvel appel réseau) - utilisé au chargement et après
+// suppression d'une ligne (le retrait ne prend effet qu'à l'enregistrement,
+// comme toute autre modification de ce tableau).
+function renderParamTable(){
+  const c=document.getElementById('paramContainer');
+  let html=`<table class='param-table'>
+  <tr>
+    <th>ID</th>
+    <th>Firmware</th>
+    <th>Nom</th>
+    <th>Couleur</th>
+    <th>Lot</th>
+    <th>Capteur→Fond</th>
+    <th>Hauteur max</th>
+    <th>Diamètre</th>
+    <th>Aj. HL</th>
+    <th></th>
+  </tr>`;
+  configData.forEach((cu,i)=>{
+    const col = cu.couleur ?? '';
+    html+=`<tr>
+    <td>${cu.id}</td>
+    <td>${cu.fw?cu.fw:'<span class="muted">?</span>'}</td>
+    <td><input value="${cu.nomCuve??''}" data-i="${i}" data-k="nomCuve"></td>
+    <td>
+      <select data-i="${i}" data-k="couleur">
+        <option value="" ${col===''?'selected':''}>Jaune (défaut)</option>
+        <option value="jauneClair" ${col==='jauneClair'?'selected':''}>Jaune clair</option>
+        <option value="jauneFonce" ${col==='jauneFonce'?'selected':''}>Jaune foncé</option>
+        <option value="vert" ${col==='vert'?'selected':''}>Vert</option>
+        <option value="gris" ${col==='gris'?'selected':''}>Gris</option>
+        <option value="violet" ${col==='violet'?'selected':''}>Violet</option>
+        <option value="rouge" ${col==='rouge'?'selected':''}>Rouge</option>
+        <option value="bleu" ${col==='bleu'?'selected':''}>Bleu</option>
+      </select>
+    </td>
+    <td><input value="${cu.lot??''}" data-i="${i}" data-k="lot"></td>
+    <td><input value="${cu.hauteurCapteurFond??''}" data-i="${i}" data-k="hauteurCapteurFond" type="number" step="0.1"></td>
+    <td><input value="${cu.hauteurMaxLiquide??''}" data-i="${i}" data-k="hauteurMaxLiquide" type="number" step="0.1"></td>
+    <td><input value="${cu.diametreCuve??''}" data-i="${i}" data-k="diametreCuve" type="number" step="0.1"></td>
+    <td><input value="${cu.AjustementHL??''}" data-i="${i}" data-k="AjustementHL" type="number" step="0.01"></td>
+    <td><button type="button" class="row-delete-btn" data-id="${cu.id}" title="Retirer ce capteur (effectif à l'enregistrement)">🗑</button></td>
+    </tr>`;
+  });
+  html+=`</table>`;
+  c.innerHTML=html;
+  c.querySelectorAll('input,select').forEach(inp=>{
+    inp.addEventListener('input',e=>{
+      const i=e.target.dataset.i,k=e.target.dataset.k;configData[i][k]=e.target.value;
+    });
+    inp.addEventListener('change',e=>{
+      const i=e.target.dataset.i,k=e.target.dataset.k;configData[i][k]=e.target.value;
+    });
+  });
+  c.querySelectorAll('.row-delete-btn').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      const id=e.target.dataset.id;
+      const cu=configData.find(x=>x.id===id);
+      if(!confirm(`Retirer le capteur "${cu?.nomCuve||id}" (${id}) ?\nSes mesures passées sont conservées, mais son réglage sera perdu et il faudra cliquer sur "Enregistrer les modifications" pour valider.`)) return;
+      configData=configData.filter(x=>x.id!==id);
+      renderParamTable();
+    });
+  });
 }
 
 async function saveConfig(){
@@ -1212,23 +1239,13 @@ async function saveConfig(){
     const d = await res.json();
 
     if (d.status === "OK") {
-      let remaining = 60;
+      // Depuis le calcul cote serveur (interpretCuve()), un changement de
+      // parametre est pris en compte immediatement - plus de delai a
+      // annoncer (l'ancien message "60s" venait du polling firmware,
+      // retire du firmware v1.3.0). On recharge directement la page.
       statusEl.style.color = '#7CFC00';
-      statusEl.textContent =
-        `✅ Sauvegardé. Config prise en compte dans ${remaining}s (penser à actualiser).`;
-
-      const intervalId = setInterval(()=>{
-        remaining--;
-        if (remaining > 0) {
-          statusEl.textContent =
-            `✅ Sauvegardé. Config prise en compte dans ${remaining}s (penser à actualiser).`;
-        } else {
-          clearInterval(intervalId);
-          statusEl.textContent =
-            "✅ Sauvegardé. Config est prise en compte. (penser à actualiser)";
-        }
-      }, 1000);
-
+      statusEl.textContent = "✅ Sauvegardé. Actualisation...";
+      setTimeout(()=>location.reload(), 600);
     } else {
       statusEl.style.color = '#ff6b6b';
       statusEl.textContent = "⚠️ Erreur lors de l'enregistrement de la configuration.";
