@@ -47,6 +47,16 @@ $distance = (int)round(floatval($data['distance'] ?? 0));
 $rssi     = isset($data['rssi']) ? intval($data['rssi']) : null;
 $fw       = htmlspecialchars(trim((string)($data['fw'] ?? '')));
 
+// Cle API (transition tolerante : voir isValidCuveApiKey() - accepte les
+// capteurs qui n'ont encore aucune cle enregistree, rejette seulement si
+// une cle existe pour cet id et ne correspond pas).
+$apiKey = $_SERVER['HTTP_X_API_KEY'] ?? null;
+if (!isValidCuveApiKey($id, $apiKey)) {
+    http_response_code(401);
+    echo json_encode(["error" => "Clé API invalide."]);
+    exit;
+}
+
 $now     = time();
 $dateIso = date('Y-m-d H:i:s', $now);
 $fwOrNull = $fw !== '' ? $fw : null;

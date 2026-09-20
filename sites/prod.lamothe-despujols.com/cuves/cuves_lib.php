@@ -3,6 +3,8 @@
 // data_cuves.csv / config_cuves.json / cache_dashboard.json / history_lots.json).
 // Memes conventions que barriques/barriques_lib.php.
 
+require_once __DIR__ . '/secrets.local.php'; // CUVE_PROVISIONING_SECRET
+
 /* =========================================================
    PATHS
    ========================================================= */
@@ -79,6 +81,7 @@ function dbConnectCuves(): PDO {
             'last_fw'          => 'TEXT',
             'last_seen_ts'     => 'INTEGER',
             'last_date_iso'    => 'TEXT',
+            'api_key'          => 'TEXT', // cle propre au capteur, voir registerCuveSensor()
         ] as $col => $type) {
             if (!in_array($col, $configCols, true)) {
                 $pdo->exec("ALTER TABLE config ADD COLUMN $col $type");
@@ -312,6 +315,50 @@ function ensureCuveConfigExists(string $sensorId, string $nomCuve): void {
          VALUES (?, ?, "", 200, 50, 70, 0, "", ?)'
     );
     $stmt->execute([$sensorId, $nomCuve, $maxPos + 1]);
+}
+
+/**
+ * Enregistrement d'un capteur avec cle API (voir register.php). Le secret
+ * fourni doit correspondre a CUVE_PROVISIONING_SECRET (partage par toute
+ * l'installation, grave dans le firmware) - sinon retourne null (rejet).
+ * Si valide : cree la config si besoin (comme ensureCuveConfigExists),
+ * genere une NOUVELLE cle propre a ce capteur, l'enregistre, la retourne.
+ * Peut etre rappelee pour un capteur deja connu (ex: apres perte de la
+ * memoire NVS du capteur) : le secret partage fait toujours foi, une
+ * nouvelle cle est alors emise et remplace l'ancienne.
+ */
+function registerCuveSensor(string $sensorId, string $nomCuve, string $providedSecret): ?string {
+    if (!hash_equals(CUVE_PROVISIONING_SECRET, $providedSecret)) {
+        return null;
+    }
+
+    ensureCuveConfigExists($sensorId, $nomCuve);
+
+    $apiKey = bin2hex(random_bytes(16));
+    $pdo = dbConnectCuves();
+    $stmt = $pdo->prepare('UPDATE config SET api_key = ? WHERE sensor_id = ?');
+    $stmt->execute([$apiKey, $sensorId]);
+
+    return $apiKey;
+}
+
+/**
+ * Verifie la cle API d'un capteur avant d'accepter une requete (voir
+ * api_cuve.php). TOLERANT pendant la transition : si ce capteur n'a
+ * encore aucune cle enregistree (ancien firmware jamais mis a jour, ou
+ * capteur qui n'a pas encore appele register.php), la requete est
+ * acceptee sans cle - comportement actuel, ouvert. Des qu'une cle existe
+ * pour ce sensor_id, elle devient obligatoire et doit correspondre.
+ */
+function isValidCuveApiKey(string $sensorId, ?string $providedKey): bool {
+    $cfg = getCuveConfigById($sensorId);
+    $storedKey = $cfg['api_key'] ?? null;
+
+    if ($storedKey === null || $storedKey === '') {
+        return true; // pas encore de cle pour ce capteur : ouvert (transition)
+    }
+
+    return $providedKey !== null && hash_equals($storedKey, $providedKey);
 }
 
 /**

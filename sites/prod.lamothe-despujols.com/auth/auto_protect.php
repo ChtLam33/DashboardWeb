@@ -23,6 +23,7 @@ const AUTH_EXEMPT_PATHS = [
     '/cuves/get_config.php',
     '/cuves/api_cuve.php',
     '/cuves/ota_check.php',
+    '/cuves/register.php',
     '/auth/login.php',
     '/auth/google_callback.php',
     '/auth/logout.php',
