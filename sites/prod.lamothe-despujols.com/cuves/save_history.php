@@ -18,18 +18,32 @@ if (is_array($data) && isset($data['comment'])) {
 
 try {
     $config = getCuvesConfig();
+    $now = time();
 
     $cuveEntries = [];
     foreach ($config as $cfg) {
         if ($cfg['last_distance_cm'] === null) continue;
 
-        $interp = interpretCuve((int)$cfg['last_distance_cm'], $cfg);
+        $distance = (int)$cfg['last_distance_cm'];
+        $interp = interpretCuve($distance, $cfg);
+
+        // Signale les cuves dont le volume enregistre est potentiellement
+        // perime/faux au moment de l'instantane (demande utilisateur) :
+        // priorite a "hors ligne" (donnee perimee) sur "mesure incoherente"
+        // (donnee recente mais suspecte).
+        $status = '';
+        if (isCuveOffline($cfg, $now)) {
+            $status = 'offline';
+        } elseif (isCuveMeasurementIncoherent($distance, $cfg)) {
+            $status = 'incoherent';
+        }
 
         $cuveEntries[] = [
             'sensor_id' => $cfg['sensor_id'],
             'nom_cuve'  => $cfg['nom_cuve'],
             'lot'       => $cfg['lot'],
             'volume_hl' => $interp['volume_hl'],
+            'status'    => $status,
         ];
     }
 

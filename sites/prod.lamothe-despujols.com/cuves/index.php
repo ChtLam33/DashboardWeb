@@ -560,6 +560,7 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
 }
 .history-child .indent-1{ padding-left:22px; }
 .history-child .indent-2{ padding-left:38px; color:#aaa; }
+.history-warning{ color:#ffb74d; }
 .history-cuves-inner td:last-child{
   text-align:right;
 }
@@ -911,12 +912,14 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         <td><?= nf($hLotVol, 2) ?></td>
         <td></td>
       </tr>
-      <?php foreach ($hLotCuves as $cuveInfo): ?>
+      <?php foreach ($hLotCuves as $cuveInfo):
+        $cuveStatusLabel = isset($cuveInfo['status_label']) ? (string)$cuveInfo['status_label'] : '';
+      ?>
       <tr class="history-child" data-parent="<?= htmlspecialchars($lotRowId) ?>" style="display:none;">
         <td class="history-toggle"></td>
         <td class="indent-2"><?= htmlspecialchars($cuveInfo['nom_cuve'] ?? '') ?></td>
         <td><?= nf($cuveInfo['volume_hl'] ?? null, 2) ?></td>
-        <td></td>
+        <td<?= $cuveStatusLabel !== '' ? ' class="history-warning"' : '' ?>><?= $cuveStatusLabel !== '' ? '⚠ '.htmlspecialchars($cuveStatusLabel) : '' ?></td>
       </tr>
       <?php endforeach; ?>
       <?php endforeach; ?>

@@ -103,9 +103,14 @@ function dbConnectCuves(): PDO {
             sensor_id TEXT NOT NULL,
             nom_cuve TEXT NOT NULL DEFAULT "",
             lot TEXT NOT NULL DEFAULT "",
-            volume_hl REAL NOT NULL DEFAULT 0
+            volume_hl REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT ""
         )');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_cuves_snapshot_cuves_snapshot ON history_snapshot_cuves(snapshot_id)');
+        $snapCuvesCols = $pdo->query('PRAGMA table_info(history_snapshot_cuves)')->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (!in_array('status', $snapCuvesCols, true)) {
+            $pdo->exec('ALTER TABLE history_snapshot_cuves ADD COLUMN status TEXT NOT NULL DEFAULT ""');
+        }
 
         $pdo->exec('CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -180,6 +185,20 @@ function interpretCuve(int $distanceRaw, array $config): array {
 function isCuveMeasurementIncoherent(int $distanceRaw, array $config): bool {
     $hauteurMaxLiquide = (float)($config['hauteur_max_liquide'] ?? 50);
     return $distanceRaw < $hauteurMaxLiquide;
+}
+
+// Meme seuil que l'indicateur "hors ligne" affiche sur chaque carte cuve
+// (index.php) - reutilise ici pour que le statut soit identique partout.
+const CUVE_OFFLINE_DISPLAY_SECONDS = 300;
+
+/**
+ * Le capteur est considere hors ligne s'il n'a plus donne signe de vie
+ * (config.last_seen_ts, mis a jour a CHAQUE reception) depuis plus de
+ * CUVE_OFFLINE_DISPLAY_SECONDS.
+ */
+function isCuveOffline(array $config, int $now): bool {
+    $lastSeen = (int)($config['last_seen_ts'] ?? 0);
+    return $lastSeen <= 0 || ($now - $lastSeen) > CUVE_OFFLINE_DISPLAY_SECONDS;
 }
 
 /* =========================================================
@@ -419,33 +438,63 @@ function resetCuveConfig(string $sensorId): void {
 /* =========================================================
    HISTORIQUE DES SNAPSHOTS (remplace history_lots.json)
    ========================================================= */
+// Libelles courts pour les statuts anormaux d'une cuve au moment d'un
+// instantane - utilises a la fois pour la colonne "Commentaire" de sa
+// ligne de detail et pour le resume ajoute automatiquement au commentaire
+// global de l'instantane.
+const CUVE_SNAPSHOT_STATUS_LABELS = [
+    'offline'     => 'hors ligne',
+    'incoherent'  => 'mesure incohérente',
+];
+
 /**
- * $cuveEntries = [ ['sensor_id'=>..., 'nom_cuve'=>..., 'lot'=>..., 'volume_hl'=>...], ... ]
+ * $cuveEntries = [ ['sensor_id'=>..., 'nom_cuve'=>..., 'lot'=>..., 'volume_hl'=>..., 'status'=>''|'offline'|'incoherent'], ... ]
  * (une ligne par cuve ayant une mesure au moment de l'instantane). Les
  * totaux par lot (history_snapshot_lots, pour l'affichage rapide) sont
  * calcules a partir de ce detail, qui est lui-meme conserve
  * (history_snapshot_cuves) pour pouvoir "developper" un lot et voir
  * quelles cuves le composaient.
+ *
+ * Si une ou plusieurs cuves sont hors ligne / en mesure incoherente au
+ * moment de l'instantane, un resume est automatiquement ajoute au
+ * commentaire (demande utilisateur : le volume enregistre pour ces
+ * cuves peut etre perime/faux, autant le savoir sans avoir a deplier
+ * chaque cuve).
  */
 function addCuveSnapshot(string $comment, array $cuveEntries): array {
     $pdo = dbConnectCuves();
     $ts = time();
-    $pdo->beginTransaction();
-    $stmt = $pdo->prepare('INSERT INTO history_snapshots (ts, comment) VALUES (?, ?)');
-    $stmt->execute([$ts, $comment]);
-    $snapshotId = (int)$pdo->lastInsertId();
 
     $stmtCuve = $pdo->prepare(
-        'INSERT INTO history_snapshot_cuves (snapshot_id, sensor_id, nom_cuve, lot, volume_hl) VALUES (?, ?, ?, ?, ?)'
+        'INSERT INTO history_snapshot_cuves (snapshot_id, sensor_id, nom_cuve, lot, volume_hl, status) VALUES (?, ?, ?, ?, ?, ?)'
     );
     $lotsTotals = [];
     $cuvesArray = [];
+    $anomalies  = [];
     foreach ($cuveEntries as $e) {
         $lotName = trim((string)($e['lot'] ?? '')) !== '' ? trim((string)$e['lot']) : 'Sans lot';
-        $vol = (float)($e['volume_hl'] ?? 0);
-        $stmtCuve->execute([$snapshotId, (string)$e['sensor_id'], (string)($e['nom_cuve'] ?? ''), $lotName, $vol]);
+        $vol     = (float)($e['volume_hl'] ?? 0);
+        $status  = (string)($e['status'] ?? '');
         $lotsTotals[$lotName] = ($lotsTotals[$lotName] ?? 0.0) + $vol;
-        $cuvesArray[] = ['sensor_id' => $e['sensor_id'], 'nom_cuve' => $e['nom_cuve'] ?? '', 'lot' => $lotName, 'volume_hl' => $vol];
+        $cuvesArray[] = ['sensor_id' => $e['sensor_id'], 'nom_cuve' => $e['nom_cuve'] ?? '', 'lot' => $lotName, 'volume_hl' => $vol, 'status' => $status];
+        if (isset(CUVE_SNAPSHOT_STATUS_LABELS[$status])) {
+            $anomalies[] = ($e['nom_cuve'] ?: $e['sensor_id']) . ' (' . CUVE_SNAPSHOT_STATUS_LABELS[$status] . ')';
+        }
+    }
+
+    $fullComment = $comment;
+    if (!empty($anomalies)) {
+        $suffix = '⚠ ' . implode(', ', $anomalies);
+        $fullComment = ($comment !== '') ? ($comment . ' — ' . $suffix) : $suffix;
+    }
+
+    $pdo->beginTransaction();
+    $stmt = $pdo->prepare('INSERT INTO history_snapshots (ts, comment) VALUES (?, ?)');
+    $stmt->execute([$ts, $fullComment]);
+    $snapshotId = (int)$pdo->lastInsertId();
+
+    foreach ($cuvesArray as $c) {
+        $stmtCuve->execute([$snapshotId, (string)$c['sensor_id'], (string)$c['nom_cuve'], (string)$c['lot'], (float)$c['volume_hl'], (string)$c['status']]);
     }
 
     $stmtLot = $pdo->prepare('INSERT INTO history_snapshot_lots (snapshot_id, lot, volume_hl) VALUES (?, ?, ?)');
@@ -469,7 +518,7 @@ function addCuveSnapshot(string $comment, array $cuveEntries): array {
 
     return [
         'datetime' => date('Y-m-d H:i:s', $ts),
-        'comment'  => $comment,
+        'comment'  => $fullComment,
         'total_hl' => array_sum($lotsTotals),
         'lots'     => $lotsArray,
         'cuves'    => $cuvesArray,
@@ -501,12 +550,15 @@ function getCuveSnapshots(int $limit = 50): array {
         $lotsBySnapshot[$l['snapshot_id']][$l['lot']] = ['lot' => $l['lot'], 'volume_hl' => (float)$l['volume_hl'], 'cuves' => []];
     }
 
-    $cuvesStmt = $pdo->prepare("SELECT snapshot_id, sensor_id, nom_cuve, lot, volume_hl FROM history_snapshot_cuves WHERE snapshot_id IN ($placeholders)");
+    $cuvesStmt = $pdo->prepare("SELECT snapshot_id, sensor_id, nom_cuve, lot, volume_hl, status FROM history_snapshot_cuves WHERE snapshot_id IN ($placeholders)");
     $cuvesStmt->execute($ids);
     foreach ($cuvesStmt->fetchAll(PDO::FETCH_ASSOC) as $c) {
         if (!isset($lotsBySnapshot[$c['snapshot_id']][$c['lot']])) continue;
+        $status = (string)($c['status'] ?? '');
         $lotsBySnapshot[$c['snapshot_id']][$c['lot']]['cuves'][] = [
             'sensor_id' => $c['sensor_id'], 'nom_cuve' => $c['nom_cuve'], 'volume_hl' => (float)$c['volume_hl'],
+            'status' => $status,
+            'status_label' => CUVE_SNAPSHOT_STATUS_LABELS[$status] ?? '',
         ];
     }
 
