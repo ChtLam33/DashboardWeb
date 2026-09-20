@@ -558,6 +558,18 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   padding:3px 4px;
   border-bottom:1px solid #2a2a2a;
 }
+.history-cuves-inner{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.78rem;
+  margin:2px 0 2px 20px;
+  width:calc(100% - 20px);
+}
+.history-cuves-inner th, .history-cuves-inner td{
+  padding:2px 4px;
+  border-bottom:1px solid #262626;
+  color:#bbb;
+}
 
 .roadmap-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:1000;}
 .roadmap-content{background:#111;border:1px solid #444;border-radius:8px;min-width:280px;max-width:520px;width:92%;max-height:85vh;color:#ddd;box-shadow:0 0 20px rgba(0,0,0,.6);display:flex;flex-direction:column;}
@@ -900,19 +912,45 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
           <table class="history-lots-inner">
             <thead>
               <tr>
+                <th style="width:24px;"></th>
                 <th>Lot</th>
                 <th>Volume (HL)</th>
               </tr>
             </thead>
             <tbody>
-              <?php foreach ($snapLots as $lotInfo):
-                $hLotName = isset($lotInfo['lot']) ? $lotInfo['lot'] : '';
-                $hLotVol  = isset($lotInfo['volume_hl']) ? $lotInfo['volume_hl'] : null;
+              <?php foreach ($snapLots as $lotIdx => $lotInfo):
+                $hLotName  = isset($lotInfo['lot']) ? $lotInfo['lot'] : '';
+                $hLotVol   = isset($lotInfo['volume_hl']) ? $lotInfo['volume_hl'] : null;
+                $hLotCuves = (isset($lotInfo['cuves']) && is_array($lotInfo['cuves'])) ? $lotInfo['cuves'] : [];
+                $lotRowId  = $rowId . '-lot' . $lotIdx;
               ?>
-              <tr>
+              <tr class="history-row"<?= !empty($hLotCuves) ? ' data-details-id="'.htmlspecialchars($lotRowId).'"' : '' ?>>
+                <td class="history-toggle"><?= !empty($hLotCuves) ? '+' : '' ?></td>
                 <td><?= htmlspecialchars($hLotName) ?></td>
                 <td><?= nf($hLotVol, 2) ?></td>
               </tr>
+              <?php if (!empty($hLotCuves)): ?>
+              <tr class="history-details" id="<?= htmlspecialchars($lotRowId) ?>" style="display:none;">
+                <td colspan="3">
+                  <table class="history-cuves-inner">
+                    <thead>
+                      <tr>
+                        <th>Cuve</th>
+                        <th>Volume (HL)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <?php foreach ($hLotCuves as $cuveInfo): ?>
+                      <tr>
+                        <td><?= htmlspecialchars($cuveInfo['nom_cuve'] ?? '') ?></td>
+                        <td><?= nf($cuveInfo['volume_hl'] ?? null, 2) ?></td>
+                      </tr>
+                      <?php endforeach; ?>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+              <?php endif; ?>
               <?php endforeach; ?>
             </tbody>
           </table>

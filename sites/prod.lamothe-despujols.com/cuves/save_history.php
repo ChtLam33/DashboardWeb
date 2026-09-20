@@ -19,24 +19,21 @@ if (is_array($data) && isset($data['comment'])) {
 try {
     $config = getCuvesConfig();
 
-    $lotsTotals = [];
+    $cuveEntries = [];
     foreach ($config as $cfg) {
         if ($cfg['last_distance_cm'] === null) continue;
 
         $interp = interpretCuve((int)$cfg['last_distance_cm'], $cfg);
-        $vol = $interp['volume_hl'];
 
-        $lotName = trim((string)($cfg['lot'] ?? '')) !== ''
-            ? trim((string)$cfg['lot'])
-            : 'Sans lot';
-
-        if (!isset($lotsTotals[$lotName])) {
-            $lotsTotals[$lotName] = 0.0;
-        }
-        $lotsTotals[$lotName] += (float)$vol;
+        $cuveEntries[] = [
+            'sensor_id' => $cfg['sensor_id'],
+            'nom_cuve'  => $cfg['nom_cuve'],
+            'lot'       => $cfg['lot'],
+            'volume_hl' => $interp['volume_hl'],
+        ];
     }
 
-    $entry = addCuveSnapshot($comment, $lotsTotals);
+    $entry = addCuveSnapshot($comment, $cuveEntries);
 
     echo json_encode([
         "status" => "OK",

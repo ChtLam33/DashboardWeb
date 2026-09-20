@@ -93,6 +93,20 @@ function dbConnectCuves(): PDO {
         )');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_cuves_snapshot_lots_snapshot ON history_snapshot_lots(snapshot_id)');
 
+        // Detail par cuve d'un instantane (pour pouvoir "developper" un lot
+        // et voir quelles cuves le composaient) - absent des instantanes
+        // importes depuis l'ancien history_lots.json (qui ne gardait que
+        // les totaux par lot), donc peut etre vide pour les anciens snapshots.
+        $pdo->exec('CREATE TABLE IF NOT EXISTS history_snapshot_cuves (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            snapshot_id INTEGER NOT NULL,
+            sensor_id TEXT NOT NULL,
+            nom_cuve TEXT NOT NULL DEFAULT "",
+            lot TEXT NOT NULL DEFAULT "",
+            volume_hl REAL NOT NULL DEFAULT 0
+        )');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_cuves_snapshot_cuves_snapshot ON history_snapshot_cuves(snapshot_id)');
+
         $pdo->exec('CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -406,7 +420,15 @@ function resetCuveConfig(string $sensorId): void {
 /* =========================================================
    HISTORIQUE DES SNAPSHOTS (remplace history_lots.json)
    ========================================================= */
-function addCuveSnapshot(string $comment, array $lotsTotals): array {
+/**
+ * $cuveEntries = [ ['sensor_id'=>..., 'nom_cuve'=>..., 'lot'=>..., 'volume_hl'=>...], ... ]
+ * (une ligne par cuve ayant une mesure au moment de l'instantane). Les
+ * totaux par lot (history_snapshot_lots, pour l'affichage rapide) sont
+ * calcules a partir de ce detail, qui est lui-meme conserve
+ * (history_snapshot_cuves) pour pouvoir "developper" un lot et voir
+ * quelles cuves le composaient.
+ */
+function addCuveSnapshot(string $comment, array $cuveEntries): array {
     $pdo = dbConnectCuves();
     $ts = time();
     $pdo->beginTransaction();
@@ -414,11 +436,24 @@ function addCuveSnapshot(string $comment, array $lotsTotals): array {
     $stmt->execute([$ts, $comment]);
     $snapshotId = (int)$pdo->lastInsertId();
 
+    $stmtCuve = $pdo->prepare(
+        'INSERT INTO history_snapshot_cuves (snapshot_id, sensor_id, nom_cuve, lot, volume_hl) VALUES (?, ?, ?, ?, ?)'
+    );
+    $lotsTotals = [];
+    $cuvesArray = [];
+    foreach ($cuveEntries as $e) {
+        $lotName = trim((string)($e['lot'] ?? '')) !== '' ? trim((string)$e['lot']) : 'Sans lot';
+        $vol = (float)($e['volume_hl'] ?? 0);
+        $stmtCuve->execute([$snapshotId, (string)$e['sensor_id'], (string)($e['nom_cuve'] ?? ''), $lotName, $vol]);
+        $lotsTotals[$lotName] = ($lotsTotals[$lotName] ?? 0.0) + $vol;
+        $cuvesArray[] = ['sensor_id' => $e['sensor_id'], 'nom_cuve' => $e['nom_cuve'] ?? '', 'lot' => $lotName, 'volume_hl' => $vol];
+    }
+
     $stmtLot = $pdo->prepare('INSERT INTO history_snapshot_lots (snapshot_id, lot, volume_hl) VALUES (?, ?, ?)');
     $lotsArray = [];
     foreach ($lotsTotals as $lotName => $vhl) {
-        $stmtLot->execute([$snapshotId, $lotName, (float)$vhl]);
-        $lotsArray[] = ['lot' => $lotName, 'volume_hl' => (float)$vhl];
+        $stmtLot->execute([$snapshotId, $lotName, $vhl]);
+        $lotsArray[] = ['lot' => $lotName, 'volume_hl' => $vhl];
     }
 
     // Retention : garde les 300 plus recents snapshots (comme l'ancienne limite JSON)
@@ -427,6 +462,7 @@ function addCuveSnapshot(string $comment, array $lotsTotals): array {
         $toDelete = array_slice($ids, 300);
         $placeholders = implode(',', array_fill(0, count($toDelete), '?'));
         $pdo->prepare("DELETE FROM history_snapshot_lots WHERE snapshot_id IN ($placeholders)")->execute($toDelete);
+        $pdo->prepare("DELETE FROM history_snapshot_cuves WHERE snapshot_id IN ($placeholders)")->execute($toDelete);
         $pdo->prepare("DELETE FROM history_snapshots WHERE id IN ($placeholders)")->execute($toDelete);
     }
 
@@ -435,13 +471,17 @@ function addCuveSnapshot(string $comment, array $lotsTotals): array {
     return [
         'datetime' => date('Y-m-d H:i:s', $ts),
         'comment'  => $comment,
-        'total_hl' => array_sum(array_map('floatval', $lotsTotals)),
+        'total_hl' => array_sum($lotsTotals),
         'lots'     => $lotsArray,
+        'cuves'    => $cuvesArray,
     ];
 }
 
 /**
  * Renvoie les snapshots les plus recents d'abord, limite a $limit.
+ * Chaque lot de chaque snapshot porte un sous-tableau "cuves" (vide pour
+ * les anciens instantanes importes de history_lots.json, qui ne
+ * gardaient que les totaux par lot).
  */
 function getCuveSnapshots(int $limit = 50): array {
     $pdo = dbConnectCuves();
@@ -454,16 +494,26 @@ function getCuveSnapshots(int $limit = 50): array {
 
     $ids = array_column($snapshots, 'id');
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
     $lotsStmt = $pdo->prepare("SELECT snapshot_id, lot, volume_hl FROM history_snapshot_lots WHERE snapshot_id IN ($placeholders)");
     $lotsStmt->execute($ids);
     $lotsBySnapshot = [];
     foreach ($lotsStmt->fetchAll(PDO::FETCH_ASSOC) as $l) {
-        $lotsBySnapshot[$l['snapshot_id']][] = ['lot' => $l['lot'], 'volume_hl' => (float)$l['volume_hl']];
+        $lotsBySnapshot[$l['snapshot_id']][$l['lot']] = ['lot' => $l['lot'], 'volume_hl' => (float)$l['volume_hl'], 'cuves' => []];
+    }
+
+    $cuvesStmt = $pdo->prepare("SELECT snapshot_id, sensor_id, nom_cuve, lot, volume_hl FROM history_snapshot_cuves WHERE snapshot_id IN ($placeholders)");
+    $cuvesStmt->execute($ids);
+    foreach ($cuvesStmt->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        if (!isset($lotsBySnapshot[$c['snapshot_id']][$c['lot']])) continue;
+        $lotsBySnapshot[$c['snapshot_id']][$c['lot']]['cuves'][] = [
+            'sensor_id' => $c['sensor_id'], 'nom_cuve' => $c['nom_cuve'], 'volume_hl' => (float)$c['volume_hl'],
+        ];
     }
 
     $out = [];
     foreach ($snapshots as $s) {
-        $lots = $lotsBySnapshot[$s['id']] ?? [];
+        $lots = array_values($lotsBySnapshot[$s['id']] ?? []);
         $out[] = [
             'datetime' => date('Y-m-d H:i:s', (int)$s['ts']),
             'comment'  => $s['comment'],
