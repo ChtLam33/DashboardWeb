@@ -187,14 +187,14 @@ function isCuveMeasurementIncoherent(int $distanceRaw, array $config): bool {
    - "config.last_*" (mis a jour a CHAQUE reception, ~toutes les 8s) sert
      de source pour "le capteur est en ligne / que vaut-il maintenant".
    - "mesures" (throttlee) ne sert qu'a garder un historique exploitable
-     plus tard, sans exploser en dizaines de milliers de lignes quasi
-     identiques pour une cuve dont le niveau ne bouge pas. Une nouvelle
-     ligne n'est ecrite que si la distance a change de facon significative
-     OU si trop de temps s'est ecoule depuis la derniere ligne enregistree
-     (garde un point de repere meme quand rien ne change).
+     plus tard (pas encore de graphique dans le dashboard - reserve pour
+     une future fonctionnalite), sans exploser en dizaines de milliers de
+     lignes quasi identiques pour une cuve dont le niveau ne bouge pas.
+     Une nouvelle ligne n'est ecrite QUE si la distance a reellement
+     change (pas de "point de repere" periodique meme si rien ne bouge -
+     inutile, "config.last_*" ci-dessus donne deja l'etat en direct).
    ========================================================= */
-const CUVE_CHANGE_THRESHOLD_CM = 2;      // en dessous, on considere que c'est du bruit capteur
-const CUVE_HEARTBEAT_SECONDS   = 3600;   // au moins un point d'historique par heure
+const CUVE_CHANGE_THRESHOLD_CM = 1; // en dessous, on considere que c'est du bruit capteur
 
 /**
  * Met a jour le "dernier etat connu" du capteur (config.last_*) - appele
@@ -221,8 +221,7 @@ function insertCuveMeasurementIfNeeded(string $sensorId, int $distanceCm, ?int $
     $shouldRecord = true;
     if ($last !== false) {
         $delta = abs($distanceCm - (int)$last['distance_cm']);
-        $age   = $ts - (int)$last['ts'];
-        $shouldRecord = ($delta >= CUVE_CHANGE_THRESHOLD_CM) || ($age >= CUVE_HEARTBEAT_SECONDS);
+        $shouldRecord = ($delta >= CUVE_CHANGE_THRESHOLD_CM);
     }
 
     if (!$shouldRecord) {

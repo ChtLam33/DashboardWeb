@@ -933,12 +933,6 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
               <tr class="history-details" id="<?= htmlspecialchars($lotRowId) ?>" style="display:none;">
                 <td colspan="3">
                   <table class="history-cuves-inner">
-                    <thead>
-                      <tr>
-                        <th>Cuve</th>
-                        <th>Volume (HL)</th>
-                      </tr>
-                    </thead>
                     <tbody>
                       <?php foreach ($hLotCuves as $cuveInfo): ?>
                       <tr>
