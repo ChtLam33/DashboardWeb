@@ -37,6 +37,11 @@ function dbConnectCuves(): PDO {
         $pdo = new PDO('sqlite:' . cuvesDbPath());
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->exec('PRAGMA journal_mode = WAL;');
+        // Sans ca, une ecriture qui tombe pile en meme temps qu'une autre
+        // (plusieurs capteurs postent a quelques secondes d'intervalle)
+        // echoue immediatement (SQLITE_BUSY) au lieu d'attendre son tour -
+        // le capteur verrait sa requete rejetee sans raison apparente.
+        $pdo->exec('PRAGMA busy_timeout = 5000;');
 
         $pdo->exec('CREATE TABLE IF NOT EXISTS mesures (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -29,6 +29,9 @@ function dbConnect(): PDO {
         $pdo = new PDO('sqlite:' . barriquesDbPath());
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->exec('PRAGMA journal_mode = WAL;');
+        // Sans ca, une ecriture qui tombe pile en meme temps qu'une autre
+        // echoue immediatement (SQLITE_BUSY) au lieu d'attendre son tour.
+        $pdo->exec('PRAGMA busy_timeout = 5000;');
         $pdo->exec('CREATE TABLE IF NOT EXISTS mesures (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sensor_id TEXT NOT NULL,
