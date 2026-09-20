@@ -558,8 +558,15 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   padding:3px 4px;
   border-bottom:1px solid #2a2a2a;
 }
+/* Colonne Volume alignee a droite dans les deux tableaux (lot ET detail
+   par cuve) : les deux tableaux partagent le meme bord droit (le detail
+   par cuve n'est retreci que par une marge a GAUCHE), donc aligner le
+   texte a droite fait coincider les deux colonnes malgre des largeurs
+   de colonnes differentes (auto-layout, pas les memes intitules). */
+.history-lots-inner td:last-child, .history-lots-inner th:last-child{
+  text-align:right;
+}
 .history-cuves-inner{
-  width:100%;
   border-collapse:collapse;
   font-size:.78rem;
   margin:2px 0 2px 20px;
@@ -569,6 +576,9 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
   padding:2px 4px;
   border-bottom:1px solid #262626;
   color:#bbb;
+}
+.history-cuves-inner td:last-child{
+  text-align:right;
 }
 
 .roadmap-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:1000;}
