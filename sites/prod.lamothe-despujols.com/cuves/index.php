@@ -22,6 +22,21 @@ function valf($arr, $key, $default = null) {
 function nf($v, $dec = 1) {
     return is_numeric($v) ? number_format((float)$v, $dec, ',', '') : '';
 }
+// Duree lisible ("45 min", "3h15", "2 jours") pour les messages de
+// fraicheur de mesure (voir la boucle de rendu des cuves plus bas).
+function formatDureeFr(int $ageSec): string {
+    if ($ageSec < 3600) {
+        $m = max(1, (int)round($ageSec / 60));
+        return $m . ' min';
+    }
+    if ($ageSec < 86400) {
+        $h = (int)floor($ageSec / 3600);
+        $m = (int)floor(($ageSec % 3600) / 60);
+        return $h . 'h' . ($m > 0 ? sprintf('%02d', $m) : '');
+    }
+    $d = (int)floor($ageSec / 86400);
+    return $d . ' jour' . ($d > 1 ? 's' : '');
+}
 // Meme couleurs que sur les vignettes cuve (avertissement "mesure
 // incohérente" / "capteur hors ligne") - reutilisees dans l'historique
 // des instantanés pour reperer d'un coup d'oeil les lignes dont le
@@ -681,28 +696,38 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     $rssi   = isset($c['rssi']) ? (int)$c['rssi'] : null;
     $dtStr  = valf($c,'datetime',null);
 
-    $ageSec     = null;
-    $isOffline  = false;
-    $isStale    = false;
-    // Le capteur envoie toutes les ~8s : 5 min de silence est deja anormal
-    // (avant : 25s, beaucoup trop strict, un capteur bien vivant clignotait
-    // "hors ligne" au moindre leger decalage reseau).
-    $offlineThreshold = 300;
-    // Etat intermediaire (demande utilisateur) : entre 1 min et 5 min, le
-    // capteur n'est pas "hors ligne" mais la mesure affichee n'est plus
-    // toute fraiche non plus - utile quand on surveille un remplissage de
-    // pres et qu'on veut savoir si la valeur vue est fiable a l'instant T.
-    $staleThreshold = 60;
+    // 4 paliers d'anciennete de la derniere mesure (demande utilisateur,
+    // 21/09/2026) : "fraiche" (rien a signaler) -> "moins de 5 min" (rose
+    // pale) -> "entre 5 min et 1 jour" (rose) -> "plus d'1 jour" (rouge,
+    // $isOffline). Le texte affiche precise toujours la duree ET l'heure
+    // exacte de la derniere mesure. La couleur de l'icone Wi-Fi ne depend
+    // plus de ces paliers (voir $wifiColor, base uniquement sur le RSSI) -
+    // seule la barre diagonale sur l'icone (classe CSS .offline) reste
+    // liee a un seuil plus tot (5 min, $wifiStrikeout) pour signaler d'un
+    // coup d'oeil un capteur qui n'a pas donne signe de vie recemment.
+    $ageSec         = null;
+    $isOffline      = false; // > 1 jour (palier "rouge")
+    $wifiStrikeout  = false; // > 5 min (icone Wi-Fi barree)
+    $staleLevel     = 0;     // 0=frais, 1=<5min (rose pale), 2=5min-1jour (rose)
+    $staleMessage   = '';
 
     if ($dtStr) {
       $ts = strtotime($dtStr);
       if ($ts !== false) {
         $ageSec = time() - $ts;
         if ($ageSec < 0) $ageSec = 0;
-        if ($ageSec > $offlineThreshold) {
+        if ($ageSec > 300) $wifiStrikeout = true;
+
+        if ($ageSec > 86400) {
           $isOffline = true;
-        } elseif ($ageSec > $staleThreshold) {
-          $isStale = true;
+          $staleLevel = 3;
+          $staleMessage = 'Capteur hors ligne, depuis ' . formatDureeFr($ageSec);
+        } elseif ($ageSec > 300) {
+          $staleLevel = 2;
+          $staleMessage = 'Mesure hors ligne, depuis ' . formatDureeFr($ageSec);
+        } elseif ($ageSec > 60) {
+          $staleLevel = 1;
+          $staleMessage = 'Mesure de moins de 5 min, pas en temps réel';
         }
       }
     }
@@ -765,11 +790,12 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     // Lot pour cette cuve
     $lotName = isset($lotById[$id]) ? trim($lotById[$id]) : '';
 
-    // Couleur du pictogramme Wi-Fi
+    // Couleur du pictogramme Wi-Fi : reflete UNIQUEMENT la force du dernier
+    // signal connu (RSSI), peu importe l'anciennete de cette mesure - le
+    // statut "hors ligne"/"en retard" est desormais porte par le message
+    // texte sous la carte (voir plus bas), pas par ce pictogramme.
     $wifiColor = 'var(--unk)';
-    if ($isOffline) {
-      $wifiColor = 'var(--bad)';
-    } elseif ($rssi !== null) {
+    if ($rssi !== null) {
       if     ($rssi > -65) $wifiColor = 'var(--ok)';
       elseif ($rssi > -75) $wifiColor = 'var(--mid)';
       else                 $wifiColor = 'var(--bad)';
@@ -788,7 +814,7 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         }
     }
   ?>
-  <div class="cuve<?= $isOffline ? ' offline' : '' ?>"
+  <div class="cuve<?= $wifiStrikeout ? ' offline' : '' ?>"
        data-pourc="<?= $pourc ?>"
        data-id="<?= $id ?>"
        data-liquid1="<?= htmlspecialchars($liquidColor1) ?>"
@@ -797,18 +823,9 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
     <div class="head">
       <span class="wifi-icon" style="background-color:<?= $wifiColor ?>"
         title="<?php
-          if ($isOffline) {
-            echo 'Capteur hors ligne'.($dtStr ? ' – dernière mesure : '.$dtStr : '');
-          } else {
-            if ($rssi !== null) {
-              echo 'RSSI: '.$rssi.' dBm';
-            } else {
-              echo 'RSSI indisponible';
-            }
-            if ($isStale && $dtStr) {
-              echo ' – en retard de mesure ('.htmlspecialchars($dtStr).')';
-            }
-          }
+          // Uniquement le dernier signal connu (voir $wifiColor) - le
+          // statut de fraicheur de la mesure est affiche sous la carte.
+          echo ($rssi !== null) ? ('RSSI: '.$rssi.' dBm') : 'RSSI indisponible';
         ?>"></span>
       <div class="title-block">
         <h2 style="color:<?= htmlspecialchars($titleColor) ?>"><?= $nom ?></h2>
@@ -848,13 +865,12 @@ main{grid-template-columns: repeat(2, minmax(180px, 1fr));}
         </div>
       <?php endif; ?>
 
-      <?php if($isOffline && $dtStr): ?>
-        <div class="muted" style="font-size:.75rem;color:#ff6b6b;">
-          ⚠ Capteur hors ligne – dernière mesure : <?= htmlspecialchars($dtStr) ?>
-        </div>
-      <?php elseif($isStale && $dtStr): ?>
-        <div class="muted" style="font-size:.75rem;color:#ffd54f;">
-          ⏱ Capteur en retard de mesure – dernière : <?= htmlspecialchars($dtStr) ?>
+      <?php if($staleLevel > 0 && $dtStr):
+        $staleColors = [1 => '#ffcdd2', 2 => '#f06292', 3 => '#ff6b6b'];
+        $staleIcons  = [1 => '⏱', 2 => '⏱', 3 => '⚠'];
+      ?>
+        <div class="muted" style="font-size:.75rem;color:<?= $staleColors[$staleLevel] ?>;">
+          <?= $staleIcons[$staleLevel] ?> <?= htmlspecialchars($staleMessage) ?> – dernière mesure : <?= htmlspecialchars($dtStr) ?>
         </div>
       <?php endif; ?>
     </div>
