@@ -197,5 +197,174 @@
                 "volume_hl": 1.59
             }
         ]
+    },
+    {
+        "datetime": "2026-01-10 09:58:20",
+        "comment": "DR-3hlsec+3saut",
+        "total_hl": 71.23,
+        "lots": [
+            {
+                "lot": "SEC25",
+                "volume_hl": 35.519999999999996
+            },
+            {
+                "lot": "SE25",
+                "volume_hl": 6
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 1.63
+            },
+            {
+                "lot": "L25",
+                "volume_hl": 28.08
+            }
+        ]
+    },
+    {
+        "datetime": "2026-01-10 14:45:03",
+        "comment": "DR sec35-3 saut34+3",
+        "total_hl": 70.83,
+        "lots": [
+            {
+                "lot": "SEC25",
+                "volume_hl": 35.24
+            },
+            {
+                "lot": "SE25",
+                "volume_hl": 6
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 1.59
+            },
+            {
+                "lot": "L25",
+                "volume_hl": 28
+            }
+        ]
+    },
+    {
+        "datetime": "2026-06-03 20:00:34",
+        "comment": "après soutirage sec",
+        "total_hl": 69.85000000000001,
+        "lots": [
+            {
+                "lot": "SEC25",
+                "volume_hl": 34.8
+            },
+            {
+                "lot": "SE25",
+                "volume_hl": 6.21
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 1.59
+            },
+            {
+                "lot": "L25",
+                "volume_hl": 27.25
+            }
+        ]
+    },
+    {
+        "datetime": "2026-07-16 21:31:13",
+        "comment": "après soutirage 2025 creation bib",
+        "total_hl": 50.4,
+        "lots": [
+            {
+                "lot": "SEC25",
+                "volume_hl": 26.82
+            },
+            {
+                "lot": "SE25",
+                "volume_hl": 8.92
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 6.32
+            },
+            {
+                "lot": "L25",
+                "volume_hl": 8.34
+            }
+        ]
+    },
+    {
+        "datetime": "2026-07-16 21:33:31",
+        "comment": "après soutirage, so2 2025 et création Bib",
+        "total_hl": 50.129999999999995,
+        "lots": [
+            {
+                "lot": "SEC25",
+                "volume_hl": 26.82
+            },
+            {
+                "lot": "BIB",
+                "volume_hl": 13.780000000000001
+            },
+            {
+                "lot": "L25",
+                "volume_hl": 8.07
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 1.46
+            }
+        ]
+    },
+    {
+        "datetime": "2026-07-24 11:01:04",
+        "comment": "manquait la 19 bug sec.. ici correct je pense",
+        "total_hl": 61.09,
+        "lots": [
+            {
+                "lot": "SEC25",
+                "volume_hl": 29.71
+            },
+            {
+                "lot": "BIB",
+                "volume_hl": 8.459999999999999
+            },
+            {
+                "lot": "L25",
+                "volume_hl": 21.46
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 1.46
+            }
+        ]
+    },
+    {
+        "datetime": "2026-09-10 07:58:44",
+        "comment": "avant MEBsec25",
+        "total_hl": 64.44,
+        "lots": [
+            {
+                "lot": "Sec25",
+                "volume_hl": 29.85
+            },
+            {
+                "lot": "Sans lot",
+                "volume_hl": 0.53
+            },
+            {
+                "lot": "Beurk",
+                "volume_hl": 1.49
+            },
+            {
+                "lot": "Sec26",
+                "volume_hl": 23.79
+            },
+            {
+                "lot": "Eau",
+                "volume_hl": 4.27
+            },
+            {
+                "lot": "Bib",
+                "volume_hl": 4.51
+            }
+        ]
     }
 ]

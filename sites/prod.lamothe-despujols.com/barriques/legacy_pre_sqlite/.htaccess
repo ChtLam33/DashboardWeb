@@ -1,0 +1,14 @@
+# Donnees perimees depuis la migration SQLite (voir barriques_lib.php) -
+# plus aucun code actif ne les lit, gardees ici seulement pour reference.
+# Meme regle que cuves/.htaccess : empeche le telechargement direct
+# (contourne auto_prepend_file / l'authentification Google, qui ne
+# s'applique qu'au PHP). Scope volontairement limite a ce sous-dossier
+# (pas le .htaccess racine de barriques/) pour ne surtout pas bloquer
+# barriques/firmware/firmware.json, servi statique et lu directement
+# par le firmware (pas de wrapper PHP cote barriques, contrairement a
+# cuves/ota_check.php).
+<FilesMatch "\.(json|csv|txt)$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes
