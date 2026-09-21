@@ -1,21 +1,5 @@
 [
     {
-        "id": "seed04",
-        "categorie": "Cuves",
-        "titre": "Harmoniser le calcul de volume côté serveur",
-        "description": "Le firmware cuves calcule lui-même le volume en HL et l'envoie déjà calculé, contrairement à barriques où le serveur fait toute l'interprétation. À corriger : le capteur cuve n'enverrait plus que la distance brute.",
-        "source": "identifie",
-        "date": "2026-09-18"
-    },
-    {
-        "id": "seed05",
-        "categorie": "Cuves",
-        "titre": "Migration SQLite côté cuves",
-        "description": "Réglerait l'absence d'historique cuves et les écritures non protégées. Ne nécessite pas de modification firmware. En attente d'un feu vert explicite avant de commencer.",
-        "source": "identifie",
-        "date": "2026-09-14"
-    },
-    {
         "id": "seed06",
         "categorie": "Nettoyage (barriques)",
         "titre": "Retirer la double écriture log texte + SQLite",
