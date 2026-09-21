@@ -1,21 +1,5 @@
 [
     {
-        "id": "seed02",
-        "categorie": "Firmware barriques (prochaine mise à jour)",
-        "titre": "Architecture dossier/nom uniformisée des fichiers capteurs",
-        "description": "Aujourd'hui les fichiers capteurs n'ont pas de nom cohérent entre barriques et cuves. Regrouper sous une convention commune pour que la protection Google reconnaisse automatiquement la famille des fichiers capteurs, sans liste à mettre à jour à la main. Nécessite d'avoir un capteur barrique en main pour tester (déjà le cas).",
-        "source": "identifie",
-        "date": "2026-09-17"
-    },
-    {
-        "id": "seed13",
-        "categorie": "Nettoyage (firmware)",
-        "titre": "Ménage des anciens builds firmware inutiles",
-        "description": "Dossiers/fichiers de compilation obsolètes repérés dans GITHUB-ESP32-LUNA (build118/, build123/, AncienBin/) et bin/arduino-cli (36 Mo, binaire Linux inutilisable sur cette machine Windows) + images tracées directement dans ESP32-CREU-BARRIQUE - à nettoyer, pas de risque particulier mais pas prioritaire.",
-        "source": "identifie",
-        "date": "2026-09-22"
-    },
-    {
         "id": "seed04",
         "categorie": "Cuves",
         "titre": "Harmoniser le calcul de volume côté serveur",
