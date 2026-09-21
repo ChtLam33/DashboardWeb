@@ -59,6 +59,19 @@ if ($id === null || $value_raw === null) {
     exit;
 }
 
+// 3bis) Cle API (voir register.php / isValidBarriqueApiKey()) - tolerant
+// tant qu'aucune cle n'a encore ete emise pour ce capteur (transition
+// firmware en cours, voir barriques_lib.php).
+$apiKeyHeader = $_SERVER['HTTP_X_API_KEY'] ?? null;
+if (!isValidBarriqueApiKey((string)$id, $apiKeyHeader)) {
+    http_response_code(401);
+    echo json_encode([
+        'status'  => 'error',
+        'message' => 'Invalid API key',
+    ]);
+    exit;
+}
+
 // 4) Dossier de log + fichier unique
 $logDir = __DIR__ . '/logs';
 if (!is_dir($logDir)) {

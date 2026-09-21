@@ -20,6 +20,7 @@ require_once __DIR__ . '/auth_lib.php';
 const AUTH_EXEMPT_PATHS = [
     '/barriques/get_config.php',
     '/barriques/api_post.php',
+    '/barriques/register.php',
     '/cuves/get_config.php',
     '/cuves/api_cuve.php',
     '/cuves/ota_check.php',

@@ -1,6 +1,8 @@
 <?php
 // barriques_lib.php
 
+require_once __DIR__ . '/secrets.local.php'; // BARRIQUE_PROVISIONING_SECRET
+
 /* =========================================================
    PATHS
    ========================================================= */
@@ -85,6 +87,16 @@ function dbConnect(): PDO {
             p256dh TEXT NOT NULL,
             auth TEXT NOT NULL,
             expiration_time INTEGER
+        )');
+
+        // Cle API par capteur (firmware >= 2.1.0, voir register.php). Table
+        // dediee car barriques n'a pas de table "config" par capteur comme
+        // cuves ou rattacher cette colonne - lots_config/offsets_creux ne
+        // sont pas garantis d'avoir une ligne pour chaque capteur existant.
+        $pdo->exec('CREATE TABLE IF NOT EXISTS api_keys (
+            sensor_id TEXT PRIMARY KEY,
+            api_key TEXT NOT NULL,
+            created_ts INTEGER NOT NULL
         )');
     }
     return $pdo;
@@ -193,6 +205,56 @@ function addPushSubscriptionIfNew(array $sub): void {
         'INSERT INTO push_subscriptions (endpoint, p256dh, auth, expiration_time) VALUES (?, ?, ?, ?)'
     );
     $stmt->execute([$endpoint, $p256dh, $auth, $expiry]);
+}
+
+/* =========================================================
+   CLE API PAR CAPTEUR (voir register.php)
+   Meme principe que cuves_lib.php::registerCuveSensor()/isValidCuveApiKey() :
+   secret de provisionnement PARTAGE (grave dans le firmware) autorisant
+   une inscription unique par capteur, qui recoit alors sa propre cle.
+   ========================================================= */
+
+/**
+ * Verifie le secret partage (BARRIQUE_PROVISIONING_SECRET) et, si valide,
+ * genere/enregistre une nouvelle cle propre a ce capteur (remplace toute
+ * cle existante - utile si un capteur perd sa memoire NVS). Retourne null
+ * si le secret ne correspond pas.
+ */
+function registerBarriqueSensor(string $sensorId, string $providedSecret): ?string {
+    if (!hash_equals(BARRIQUE_PROVISIONING_SECRET, $providedSecret)) {
+        return null;
+    }
+
+    $apiKey = bin2hex(random_bytes(16));
+    $pdo = dbConnect();
+    $stmt = $pdo->prepare(
+        'INSERT INTO api_keys (sensor_id, api_key, created_ts) VALUES (?, ?, ?)
+         ON CONFLICT(sensor_id) DO UPDATE SET api_key = excluded.api_key, created_ts = excluded.created_ts'
+    );
+    $stmt->execute([$sensorId, $apiKey, time()]);
+
+    return $apiKey;
+}
+
+/**
+ * Verifie la cle API d'un capteur avant d'accepter une requete (voir
+ * api_post.php). TOLERANT pendant la transition : si ce capteur n'a
+ * encore aucune cle enregistree (ancien firmware, ou pas encore appele
+ * register.php), la requete est acceptee sans cle - comportement actuel,
+ * ouvert. Des qu'une cle existe pour ce sensor_id, elle devient
+ * obligatoire et doit correspondre.
+ */
+function isValidBarriqueApiKey(string $sensorId, ?string $providedKey): bool {
+    $pdo = dbConnect();
+    $stmt = $pdo->prepare('SELECT api_key FROM api_keys WHERE sensor_id = ?');
+    $stmt->execute([$sensorId]);
+    $storedKey = $stmt->fetchColumn();
+
+    if ($storedKey === false || $storedKey === '') {
+        return true; // pas encore de cle pour ce capteur : ouvert (transition)
+    }
+
+    return $providedKey !== null && hash_equals($storedKey, $providedKey);
 }
 
 function insertMeasurement(string $sensorId, string $dateIso, int $raw, ?int $batteryMv, ?int $rssi, ?string $fw, int $ts, ?int $sleepS = null): void {

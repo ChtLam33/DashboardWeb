@@ -3,9 +3,17 @@
         "id": "seed01",
         "categorie": "Firmware barriques (prochaine mise à jour)",
         "titre": "Clé API par capteur",
-        "description": "Auto-enregistrement à la première connexion (le capteur envoie son numéro, le serveur génère une clé secrète et la renvoie, stockée dans la mémoire du capteur comme le Wi-Fi) — pas de saisie manuelle. Nécessite un code partagé unique pour toute l'installation, gravé dans le firmware, pour autoriser cette première inscription.",
+        "description": "Code fait le 22/09/2026 (firmware v2.1.0 + register.php + barriques_lib.php, même principe que cuves v1.3.0) — reste à compiler, flasher sur le capteur de test (USB) et valider avant tout déploiement OTA réel.",
         "source": "identifie",
         "date": "2026-09-17"
+    },
+    {
+        "id": "seed12",
+        "categorie": "Firmware barriques (prochaine mise à jour)",
+        "titre": "Délai après WiFi.mode() avant connexion (fiabilité reconnexion)",
+        "description": "Code fait le 22/09/2026 (firmware v2.1.0) : delay(300) ajouté après WiFi.mode(WIFI_STA) dans tryQuickReconnect() et avant wm.autoConnect() — confirmé efficace côté cuves (v1.3.1) contre \"wifi:Association refused too many times\". Reste à valider sur le capteur de test.",
+        "source": "identifie",
+        "date": "2026-09-21"
     },
     {
         "id": "seed02",
@@ -19,7 +27,7 @@
         "id": "seed03",
         "categorie": "Firmware barriques (prochaine mise à jour)",
         "titre": "Validation du certificat HTTPS par le firmware",
-        "description": "Le firmware fait actuellement confiance au serveur sans vérifier son certificat. À corriger via l'autorité de certification (Let's Encrypt) plutôt qu'un pinning de l'empreinte exacte, qui expirerait à chaque renouvellement (tous les 90 jours).",
+        "description": "Code fait le 22/09/2026 (firmware v2.1.0, certificat ISRG Root X1 + synchro NTP + repli automatique en mode non vérifié si ça échoue, même principe que cuves v1.3.0) — reste à compiler, flasher et valider (message NTP + connexions verifiées dans le moniteur série).",
         "source": "identifie",
         "date": "2026-09-17"
     },
